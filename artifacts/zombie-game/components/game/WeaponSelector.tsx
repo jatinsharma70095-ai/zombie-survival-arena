@@ -14,7 +14,7 @@ const WEAPON_ICONS: Record<WeaponId, string> = {
   pistol: "pistol",
   shotgun: "bullet",
   sniper: "crosshairs-gps",
-  uzi: "gun",
+  uzi: "pistol",
   minigun: "shimmer",
   bazooka: "rocket-launch",
 };
