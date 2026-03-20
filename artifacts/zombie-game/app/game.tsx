@@ -158,8 +158,10 @@ export default function GameScreen() {
         />
 
         {/* Controls */}
-        <View style={[styles.controls, { paddingBottom: botPad + 16 }]}>
+        <View style={[styles.joystickArea, { bottom: botPad + 20 }]}>
           <Joystick onMove={handleMove} side="left" size={110} />
+        </View>
+        <View style={[styles.shootArea, { bottom: botPad + 20 }]}>
           <ShootButton onShootAt={handleShoot} onReload={handleReload} />
         </View>
       </View>
@@ -269,15 +271,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  controls: {
+  joystickArea: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    paddingHorizontal: 24,
+    left: 24,
+  },
+  shootArea: {
+    position: "absolute",
+    right: 24,
   },
   overlay: {
     flex: 1,

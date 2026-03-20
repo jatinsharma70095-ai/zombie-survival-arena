@@ -12,10 +12,10 @@ import { WeaponId, WEAPONS } from "@/context/GameContext";
 
 const WEAPON_ICONS: Record<WeaponId, string> = {
   pistol: "pistol",
-  shotgun: "bullet",
+  shotgun: "scatter-plot",
   sniper: "crosshairs-gps",
-  uzi: "pistol",
-  minigun: "shimmer",
+  uzi: "ray-start-arrow",
+  minigun: "rotate-3d-variant",
   bazooka: "rocket-launch",
 };
 
@@ -79,7 +79,7 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    bottom: 155,
+    bottom: 184,
     left: 0,
     right: 0,
   },

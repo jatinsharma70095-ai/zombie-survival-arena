@@ -36,6 +36,14 @@ export function ShootButton({ onShootAt, onReload }: Props) {
 
   return (
     <View style={styles.wrapper}>
+      <View style={styles.reloadBtn}>
+        <MaterialCommunityIcons
+          name="reload"
+          size={20}
+          color="rgba(255,255,255,0.6)"
+          onPress={onReload}
+        />
+      </View>
       <View
         style={[styles.btn, active && styles.btnActive]}
         {...panResponder.panHandlers}
@@ -49,21 +57,14 @@ export function ShootButton({ onShootAt, onReload }: Props) {
           <View style={styles.aimRing} />
         )}
       </View>
-      <View style={styles.reloadBtn}>
-        <MaterialCommunityIcons
-          name="reload"
-          size={20}
-          color="rgba(255,255,255,0.6)"
-          onPress={onReload}
-        />
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrapper: {
-    alignItems: "center",
+    flexDirection: "row",
+    alignItems: "flex-end",
     gap: 12,
   },
   btn: {
