@@ -31,8 +31,8 @@ const INITIAL_STATE: GameState = {
   explosions: [],
   score: 0,
   kills: 0,
-  ammo: 12,
-  maxAmmo: 12,
+  ammo: 60,
+  maxAmmo: 60,
   isReloading: false,
   reloadProgress: 0,
   currentWeapon: "pistol",
@@ -85,10 +85,8 @@ export default function GameScreen() {
     engineRef.current?.movePlayer(dx, dy, sprinting);
   }, []);
 
-  const handleShoot = useCallback((dx: number, dy: number) => {
-    const state = engineRef.current?.getState();
-    if (!state) return;
-    engineRef.current?.shoot(state.player.x + dx, state.player.y + dy);
+  const handleShoot = useCallback(() => {
+    engineRef.current?.shootAtNearest();
   }, []);
 
   const handleReload = useCallback(() => {

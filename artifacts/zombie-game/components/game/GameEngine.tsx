@@ -87,6 +87,7 @@ export interface GameState {
 export interface GameEngineHandle {
   getState: () => GameState;
   shoot: (targetX: number, targetY: number) => void;
+  shootAtNearest: () => void;
   movePlayer: (dx: number, dy: number, sprinting: boolean) => void;
   reload: () => void;
   setWeapon: (weaponId: WeaponId) => void;
@@ -336,6 +337,20 @@ export const GameEngine = React.forwardRef<
     const finalZombies = updatedZombies.filter(z => !z.isDead || (z.deathTime && timestamp - z.deathTime < 600));
     const aliveZombies = finalZombies.filter(z => !z.isDead).length;
 
+    // ── AUTO-AIM: rotate player toward nearest alive zombie ──
+    let autoAngle = s.player.angle;
+    let nearestDist = Infinity;
+    for (const z of finalZombies) {
+      if (z.isDead) continue;
+      const dx = z.x - s.player.x;
+      const dy = z.y - s.player.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < nearestDist) {
+        nearestDist = d;
+        autoAngle = Math.atan2(dy, dx);
+      }
+    }
+
     stateRef.current = {
       ...s,
       playerHp,
@@ -350,6 +365,7 @@ export const GameEngine = React.forwardRef<
       reloadProgress,
       ammo,
       zombiesRemainingInWave: aliveZombies,
+      player: { ...s.player, angle: autoAngle },
     };
 
     onStateChange({ ...stateRef.current });
@@ -358,6 +374,57 @@ export const GameEngine = React.forwardRef<
 
   useImperativeHandle(ref, () => ({
     getState: () => stateRef.current!,
+    shootAtNearest: () => {
+      const s = stateRef.current;
+      if (!s || s.gameOver || s.victory || isReloadingRef.current) return;
+      // Find nearest alive zombie
+      let nearestX = s.player.x + Math.cos(s.player.angle) * 200;
+      let nearestY = s.player.y + Math.sin(s.player.angle) * 200;
+      let nearestDist = Infinity;
+      for (const z of s.zombies) {
+        if (z.isDead) continue;
+        const dx = z.x - s.player.x;
+        const dy = z.y - s.player.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestX = z.x;
+          nearestY = z.y;
+        }
+      }
+      const now = Date.now();
+      const weapon = WEAPONS[s.currentWeapon];
+      if (now - lastFireRef.current < weapon.fireRate) return;
+      if (s.ammo <= 0) return;
+      lastFireRef.current = now;
+      const dx = nearestX - s.player.x;
+      const dy = nearestY - s.player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const speed = 9;
+      const newBullets: Bullet[] = [];
+      for (let i = 0; i < weapon.bulletsPerShot; i++) {
+        const spread = (weapon.spread * (Math.random() - 0.5) * Math.PI) / 180;
+        const cos = Math.cos(spread);
+        const sin = Math.sin(spread);
+        const vx = (nx * cos - ny * sin) * speed;
+        const vy = (nx * sin + ny * cos) * speed;
+        newBullets.push({
+          id: idGen(), x: s.player.x, y: s.player.y,
+          vx, vy, damage: weapon.damage,
+          range: weapon.range, distanceTraveled: 0,
+          weaponId: s.currentWeapon,
+          isExplosive: s.currentWeapon === "bazooka",
+        });
+      }
+      stateRef.current = {
+        ...s,
+        bullets: [...s.bullets, ...newBullets],
+        ammo: s.ammo - 1,
+        player: { ...s.player, angle: Math.atan2(dy, dx) },
+      };
+    },
     shoot: (targetX: number, targetY: number) => {
       const s = stateRef.current;
       if (!s || s.gameOver || s.victory || isReloadingRef.current) return;
