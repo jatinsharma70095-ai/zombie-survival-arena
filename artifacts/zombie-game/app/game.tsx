@@ -1,12 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  StyleSheet,
-  Text,
-  Pressable,
-  Platform,
-  Modal,
+  View, StyleSheet, Text, Pressable, Platform, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -16,6 +11,7 @@ import Colors from "@/constants/colors";
 import { useGame } from "@/context/GameContext";
 import { GameEngine, GameEngineHandle, GameState } from "@/components/game/GameEngine";
 import { GameCanvas } from "@/components/game/GameCanvas";
+import { GameCanvasHTML } from "@/components/game/GameCanvasHTML";
 import { Joystick } from "@/components/game/Joystick";
 import { ShootButton } from "@/components/game/ShootButton";
 import { HUD } from "@/components/game/HUD";
@@ -23,26 +19,28 @@ import { WeaponSelector } from "@/components/game/WeaponSelector";
 
 const INITIAL_STATE: GameState = {
   player: { x: 200, y: 400, angle: 0 },
-  playerHp: 100,
-  maxHp: 100,
-  stamina: 100,
-  bullets: [],
-  zombies: [],
-  explosions: [],
-  score: 0,
-  kills: 0,
-  ammo: 60,
-  maxAmmo: 60,
-  isReloading: false,
-  reloadProgress: 0,
+  playerHp: 100, maxHp: 100, stamina: 100,
+  bullets: [], zombies: [], explosions: [],
+  score: 0, kills: 0, ammo: 60, maxAmmo: 60,
+  isReloading: false, reloadProgress: 0,
   currentWeapon: "pistol",
-  level: 1,
-  wave: 0,
-  zombiesRemainingInWave: 0,
-  gameOver: false,
-  victory: false,
-  staminaExhausted: false,
+  level: 1, wave: 0, zombiesRemainingInWave: 0,
+  gameOver: false, victory: false, staminaExhausted: false,
+  lastDamageTime: 0, lastShotTime: 0,
+  lastShotAngle: 0, lastShotX: 0, lastShotY: 0,
+  recentKills: [],
 };
+
+// Inject touch-action: none for web so the page never scrolls during play
+if (Platform.OS === "web" && typeof document !== "undefined") {
+  const style = document.createElement("style");
+  style.textContent = `
+    body, html { touch-action: none; overflow: hidden; overscroll-behavior: none; }
+    canvas { touch-action: none; }
+    * { -webkit-tap-highlight-color: transparent; }
+  `;
+  document.head.appendChild(style);
+}
 
 export default function GameScreen() {
   const params = useLocalSearchParams<{ level?: string }>();
@@ -55,24 +53,19 @@ export default function GameScreen() {
   const [showResult, setShowResult] = useState(false);
   const [resultWon, setResultWon] = useState(false);
   const [resultKills, setResultKills] = useState(0);
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : insets.bottom;
+
+  const topPad = Platform.OS === "web" ? 44 : insets.top;
+  const botPad = Platform.OS === "web" ? 24 : insets.bottom;
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      engineRef.current?.startGame(level, playerStats.selectedWeapon);
-    }, 100);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => engineRef.current?.startGame(level, playerStats.selectedWeapon), 100);
+    return () => clearTimeout(t);
   }, [level, playerStats.selectedWeapon]);
 
-  const handleStateChange = useCallback((state: GameState) => {
-    setGameState(state);
-  }, []);
+  const handleStateChange = useCallback((s: GameState) => setGameState(s), []);
 
   const handleGameEnd = useCallback((won: boolean, kills: number) => {
-    setResultWon(won);
-    setResultKills(kills);
-    setShowResult(true);
+    setResultWon(won); setResultKills(kills); setShowResult(true);
     if (won) {
       completeLevel(level, kills);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -85,83 +78,56 @@ export default function GameScreen() {
     engineRef.current?.movePlayer(dx, dy, sprinting);
   }, []);
 
-  const handleShoot = useCallback(() => {
-    engineRef.current?.shootAtNearest();
-  }, []);
-
-  const handleReload = useCallback(() => {
-    engineRef.current?.reload();
-  }, []);
+  const handleShoot = useCallback(() => { engineRef.current?.shootAtNearest(); }, []);
+  const handleReload = useCallback(() => { engineRef.current?.reload(); }, []);
 
   const handleWeaponSelect = useCallback((weaponId: string) => {
     engineRef.current?.setWeapon(weaponId as any);
   }, []);
 
-  const handlePause = () => {
-    setPaused(true);
-    engineRef.current?.pauseGame();
-  };
-
-  const handleResume = () => {
-    setPaused(false);
-    engineRef.current?.resumeGame();
-  };
-
-  const handleRestart = () => {
-    setShowResult(false);
-    setPaused(false);
-    engineRef.current?.startGame(level, playerStats.selectedWeapon);
-  };
-
-  const handleHome = () => {
-    router.replace("/");
-  };
-
+  const handlePause = () => { setPaused(true); engineRef.current?.pauseGame(); };
+  const handleResume = () => { setPaused(false); engineRef.current?.resumeGame(); };
+  const handleRestart = () => { setShowResult(false); setPaused(false); engineRef.current?.startGame(level, playerStats.selectedWeapon); };
+  const handleHome = () => router.replace("/");
   const handleNextLevel = () => {
-    if (level >= 10) {
-      router.replace("/");
-      return;
-    }
+    if (level >= 10) { router.replace("/"); return; }
     setShowResult(false);
     router.replace({ pathname: "/game", params: { level: (level + 1).toString() } });
   };
 
   return (
     <View style={styles.root}>
-      {/* Game canvas */}
-      <GameEngine
-        ref={engineRef}
-        onStateChange={handleStateChange}
-        onGameEnd={handleGameEnd}
-      />
-      <GameCanvas state={gameState} />
+      <GameEngine ref={engineRef} onStateChange={handleStateChange} onGameEnd={handleGameEnd} />
 
-      {/* HUD */}
-      <View
-        style={[
-          styles.hud,
-          { paddingTop: topPad + 8, paddingBottom: botPad },
-        ]}
-      >
+      {/* Game canvas - HTML5 Canvas on web, SVG on native */}
+      {Platform.OS === "web"
+        ? <GameCanvasHTML state={gameState} />
+        : <GameCanvas state={gameState} />
+      }
+
+      {/* HUD layer */}
+      <View style={[styles.hud, { paddingTop: topPad + 6 }]} pointerEvents="box-none">
         <HUD state={gameState} diamonds={playerStats.diamonds} />
 
-        {/* Pause Button */}
-        <Pressable style={[styles.pauseBtn, { top: topPad + 8 }]} onPress={handlePause}>
+        {/* Pause button */}
+        <Pressable style={[styles.pauseBtn, { top: topPad + 6 }]} onPress={handlePause}>
           <MaterialCommunityIcons name="pause" size={20} color={Colors.text} />
         </Pressable>
 
-        {/* Weapon Selector */}
+        {/* Weapon Selector — just above bottom controls */}
         <WeaponSelector
           unlockedWeapons={playerStats.unlockedWeapons}
           selectedWeapon={gameState.currentWeapon}
           onSelect={handleWeaponSelect as any}
         />
 
-        {/* Controls */}
-        <View style={[styles.joystickArea, { bottom: botPad + 20 }]}>
-          <Joystick onMove={handleMove} side="left" size={110} />
+        {/* LEFT: Joystick */}
+        <View style={[styles.joystickArea, { bottom: botPad + 18 }]}>
+          <Joystick onMove={handleMove} side="left" size={112} />
         </View>
-        <View style={[styles.shootArea, { bottom: botPad + 20 }]}>
+
+        {/* RIGHT: Shoot + Reload */}
+        <View style={[styles.shootArea, { bottom: botPad + 18 }]}>
           <ShootButton onShootAt={handleShoot} onReload={handleReload} />
         </View>
       </View>
@@ -189,7 +155,7 @@ export default function GameScreen() {
       <Modal visible={showResult} transparent animationType="fade">
         <View style={styles.overlay}>
           <LinearGradient
-            colors={resultWon ? ["rgba(0,0,0,0.9)", "rgba(0,40,0,0.95)"] : ["rgba(0,0,0,0.9)", "rgba(40,0,0,0.95)"]}
+            colors={resultWon ? ["rgba(0,0,0,0.92)", "rgba(0,30,0,0.96)"] : ["rgba(0,0,0,0.92)", "rgba(40,0,0,0.96)"]}
             style={styles.overlayCard}
           >
             <MaterialCommunityIcons
@@ -209,13 +175,13 @@ export default function GameScreen() {
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
                 <MaterialCommunityIcons name="skull" size={18} color={Colors.textSecondary} />
-                <Text style={styles.statItemVal}>{resultKills}</Text>
-                <Text style={styles.statItemLabel}>kills</Text>
+                <Text style={styles.statVal}>{resultKills}</Text>
+                <Text style={styles.statLabel}>kills</Text>
               </View>
               <View style={styles.statItem}>
                 <MaterialCommunityIcons name="star" size={18} color={Colors.gold} />
-                <Text style={styles.statItemVal}>{gameState.score}</Text>
-                <Text style={styles.statItemLabel}>score</Text>
+                <Text style={styles.statVal}>{gameState.score}</Text>
+                <Text style={styles.statLabel}>score</Text>
               </View>
             </View>
             {resultWon ? (
@@ -247,122 +213,61 @@ export default function GameScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#0D1117",
-  },
+  root: { flex: 1, backgroundColor: "#080808" },
   hud: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
     pointerEvents: "box-none",
   },
   pauseBtn: {
-    position: "absolute",
-    right: 12,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
+    position: "absolute", right: 12,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
+    alignItems: "center", justifyContent: "center",
   },
-  joystickArea: {
-    position: "absolute",
-    left: 24,
-  },
-  shootArea: {
-    position: "absolute",
-    right: 24,
-  },
+  joystickArea: { position: "absolute", left: 22 },
+  shootArea: { position: "absolute", right: 22 },
   overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    justifyContent: "center",
+    flex: 1, backgroundColor: "rgba(0,0,0,0.65)",
+    alignItems: "center", justifyContent: "center",
   },
   overlayCard: {
-    width: "82%",
-    borderRadius: 24,
-    padding: 32,
-    alignItems: "center",
-    gap: 16,
+    width: "82%", borderRadius: 24, padding: 32,
+    alignItems: "center", gap: 16,
     backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    borderWidth: 1, borderColor: Colors.border,
     overflow: "hidden",
   },
   overlayTitle: {
-    color: Colors.text,
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 3,
+    color: Colors.text, fontSize: 28,
+    fontFamily: "Inter_700Bold", letterSpacing: 3,
   },
   rewardRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
+    flexDirection: "row", alignItems: "center", gap: 6,
     backgroundColor: "rgba(0,212,255,0.12)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(0,212,255,0.2)",
+    paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 12, borderWidth: 1, borderColor: "rgba(0,212,255,0.2)",
   },
-  rewardText: {
-    color: Colors.diamond,
-    fontSize: 18,
-    fontFamily: "Inter_700Bold",
-  },
-  statsRow: {
-    flexDirection: "row",
-    gap: 24,
-    marginVertical: 4,
-  },
-  statItem: {
-    alignItems: "center",
-    gap: 3,
-  },
-  statItemVal: {
-    color: Colors.text,
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
-  },
-  statItemLabel: {
-    color: Colors.textSecondary,
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-  },
+  rewardText: { color: Colors.diamond, fontSize: 18, fontFamily: "Inter_700Bold" },
+  statsRow: { flexDirection: "row", gap: 24, marginVertical: 4 },
+  statItem: { alignItems: "center", gap: 3 },
+  statVal: { color: Colors.text, fontSize: 22, fontFamily: "Inter_700Bold" },
+  statLabel: { color: Colors.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular" },
   overlayBtn: {
-    width: "100%",
-    paddingVertical: 16,
-    backgroundColor: "#1A5C1A",
-    borderRadius: 14,
-    alignItems: "center",
+    width: "100%", paddingVertical: 16,
+    backgroundColor: "#1A5C1A", borderRadius: 14, alignItems: "center",
   },
   overlayBtnText: {
-    color: Colors.text,
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-    letterSpacing: 2,
+    color: Colors.text, fontSize: 16,
+    fontFamily: "Inter_700Bold", letterSpacing: 2,
   },
   overlaySecBtn: {
-    width: "100%",
-    paddingVertical: 13,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 14,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    width: "100%", paddingVertical: 13,
+    backgroundColor: "rgba(255,255,255,0.06)", borderRadius: 14,
+    alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
   },
   overlaySecText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 1.5,
+    color: Colors.textSecondary, fontSize: 14,
+    fontFamily: "Inter_600SemiBold", letterSpacing: 1.5,
   },
 });

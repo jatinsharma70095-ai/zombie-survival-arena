@@ -1,12 +1,8 @@
 import React, { useRef, useState } from "react";
-import { PanResponder, View, StyleSheet } from "react-native";
+import { PanResponder, View, StyleSheet, Pressable } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import Colors from "@/constants/colors";
 
-interface Props {
-  onShootAt: () => void;
-  onReload: () => void;
-}
+interface Props { onShootAt: () => void; onReload: () => void; }
 
 export function ShootButton({ onShootAt, onReload }: Props) {
   const [active, setActive] = useState(false);
@@ -19,9 +15,7 @@ export function ShootButton({ onShootAt, onReload }: Props) {
       onPanResponderGrant: () => {
         setActive(true);
         onShootAt();
-        autoFireRef.current = setInterval(() => {
-          onShootAt();
-        }, 60);
+        autoFireRef.current = setInterval(() => onShootAt(), 60);
       },
       onPanResponderRelease: () => {
         setActive(false);
@@ -36,26 +30,22 @@ export function ShootButton({ onShootAt, onReload }: Props) {
 
   return (
     <View style={styles.wrapper}>
-      <View style={styles.reloadBtn}>
-        <MaterialCommunityIcons
-          name="reload"
-          size={20}
-          color="rgba(255,255,255,0.6)"
-          onPress={onReload}
-        />
-      </View>
+      {/* Reload button above */}
+      <Pressable style={styles.reloadBtn} onPress={onReload}>
+        <MaterialCommunityIcons name="reload" size={22} color="rgba(255,255,255,0.65)" />
+      </Pressable>
+
+      {/* Main shoot button */}
       <View
         style={[styles.btn, active && styles.btnActive]}
         {...panResponder.panHandlers}
       >
         <MaterialCommunityIcons
           name="crosshairs"
-          size={34}
-          color={active ? "#FF3B30" : "rgba(255,255,255,0.8)"}
+          size={36}
+          color={active ? "#FF3B30" : "rgba(255,255,255,0.85)"}
         />
-        {active && (
-          <View style={styles.aimRing} />
-        )}
+        {active && <View style={styles.aimRing} />}
       </View>
     </View>
   );
@@ -63,41 +53,40 @@ export function ShootButton({ onShootAt, onReload }: Props) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 12,
+    alignItems: "center",
+    gap: 10,
+  },
+  reloadBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: "rgba(255,255,255,0.07)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   btn: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "rgba(255,59,48,0.15)",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(255,59,48,0.14)",
     borderWidth: 2.5,
-    borderColor: "rgba(255,59,48,0.45)",
+    borderColor: "rgba(255,59,48,0.42)",
     alignItems: "center",
     justifyContent: "center",
   },
   btnActive: {
-    backgroundColor: "rgba(255,59,48,0.35)",
+    backgroundColor: "rgba(255,59,48,0.32)",
     borderColor: "#FF3B30",
   },
   aimRing: {
     position: "absolute",
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 116,
+    height: 116,
+    borderRadius: 58,
     borderWidth: 1.5,
-    borderColor: "rgba(255,59,48,0.35)",
+    borderColor: "rgba(255,59,48,0.3)",
     borderStyle: "dashed",
-  },
-  reloadBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
   },
 });
