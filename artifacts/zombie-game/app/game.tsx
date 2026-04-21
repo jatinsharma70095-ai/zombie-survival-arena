@@ -43,9 +43,21 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
     * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
   `;
   document.head.appendChild(style);
-  document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+  const isInteractive = (el: EventTarget | null) => {
+    const node = el as HTMLElement | null;
+    if (!node || !node.closest) return false;
+    return !!node.closest(
+      '[role="button"], [role="link"], button, a, input, textarea, select, [data-interactive="true"]'
+    );
+  };
+  document.addEventListener("touchmove", (e) => {
+    if (isInteractive(e.target)) return;
+    e.preventDefault();
+  }, { passive: false });
   document.addEventListener("touchstart", (e) => {
-    if ((e.target as HTMLElement)?.tagName !== "INPUT") e.preventDefault();
+    if (isInteractive(e.target)) return;
+    if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+    e.preventDefault();
   }, { passive: false });
 }
 
