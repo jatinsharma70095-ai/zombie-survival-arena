@@ -4,11 +4,10 @@ import {
   View, StyleSheet, Text, Pressable, Platform, Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
-import { useGame } from "@/context/GameContext";
+import { useGame, MAX_LEVELS } from "@/context/GameContext";
 import { GameEngine, GameEngineHandle, GameState } from "@/components/game/GameEngine";
 import { GameCanvas } from "@/components/game/GameCanvas";
 import { GameCanvasHTML } from "@/components/game/GameCanvasHTML";
@@ -29,30 +28,38 @@ const INITIAL_STATE: GameState = {
   lastDamageTime: 0, lastShotTime: 0,
   lastShotAngle: 0, lastShotX: 0, lastShotY: 0,
   recentKills: [],
+  killStreakBonus: 0,
 };
 
-// Inject touch-action: none for web so the page never scrolls during play
+// Inject touch-action: none globally on web
 if (Platform.OS === "web" && typeof document !== "undefined") {
   const style = document.createElement("style");
   style.textContent = `
-    body, html { touch-action: none; overflow: hidden; overscroll-behavior: none; }
-    canvas { touch-action: none; }
-    * { -webkit-tap-highlight-color: transparent; }
+    *, *::before, *::after { touch-action: none !important; }
+    body, html { overflow: hidden !important; overscroll-behavior: none !important; }
+    * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
   `;
   document.head.appendChild(style);
+  // Prevent all scroll/zoom on document
+  document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("touchstart", (e) => {
+    if ((e.target as HTMLElement)?.tagName !== "INPUT") e.preventDefault();
+  }, { passive: false });
 }
 
 export default function GameScreen() {
   const params = useLocalSearchParams<{ level?: string }>();
   const level = parseInt(params.level ?? "1", 10);
   const insets = useSafeAreaInsets();
-  const { playerStats, completeLevel } = useGame();
+  const { playerStats, completeLevel, addDiamonds } = useGame();
   const engineRef = useRef<GameEngineHandle>(null);
   const [gameState, setGameState] = useState<GameState>(INITIAL_STATE);
   const [paused, setPaused] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [resultWon, setResultWon] = useState(false);
   const [resultKills, setResultKills] = useState(0);
+  const [resultDiamonds, setResultDiamonds] = useState(0);
+  const [streakCount, setStreakCount] = useState(0);
 
   const topPad = Platform.OS === "web" ? 44 : insets.top;
   const botPad = Platform.OS === "web" ? 24 : insets.bottom;
@@ -64,10 +71,16 @@ export default function GameScreen() {
 
   const handleStateChange = useCallback((s: GameState) => setGameState(s), []);
 
-  const handleGameEnd = useCallback((won: boolean, kills: number) => {
+  const handleKillStreak = useCallback((bonus: number) => {
+    setStreakCount(prev => prev + 1);
+    addDiamonds(bonus);
+  }, [addDiamonds]);
+
+  const handleGameEnd = useCallback((won: boolean, kills: number, streakBonus: number) => {
     setResultWon(won); setResultKills(kills); setShowResult(true);
     if (won) {
-      completeLevel(level, kills);
+      const total = completeLevel(level, kills, streakBonus);
+      setResultDiamonds(total);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -87,19 +100,27 @@ export default function GameScreen() {
 
   const handlePause = () => { setPaused(true); engineRef.current?.pauseGame(); };
   const handleResume = () => { setPaused(false); engineRef.current?.resumeGame(); };
-  const handleRestart = () => { setShowResult(false); setPaused(false); engineRef.current?.startGame(level, playerStats.selectedWeapon); };
+  const handleRestart = () => {
+    setShowResult(false); setPaused(false); setStreakCount(0);
+    engineRef.current?.startGame(level, playerStats.selectedWeapon);
+  };
   const handleHome = () => router.replace("/");
   const handleNextLevel = () => {
-    if (level >= 10) { router.replace("/"); return; }
-    setShowResult(false);
+    if (level >= MAX_LEVELS) { router.replace("/"); return; }
+    setShowResult(false); setStreakCount(0);
     router.replace({ pathname: "/game", params: { level: (level + 1).toString() } });
   };
 
   return (
     <View style={styles.root}>
-      <GameEngine ref={engineRef} onStateChange={handleStateChange} onGameEnd={handleGameEnd} />
+      <GameEngine
+        ref={engineRef}
+        onStateChange={handleStateChange}
+        onGameEnd={handleGameEnd}
+        onKillStreak={handleKillStreak}
+      />
 
-      {/* Game canvas - HTML5 Canvas on web, SVG on native */}
+      {/* Game canvas */}
       {Platform.OS === "web"
         ? <GameCanvasHTML state={gameState} />
         : <GameCanvas state={gameState} />
@@ -111,10 +132,17 @@ export default function GameScreen() {
 
         {/* Pause button */}
         <Pressable style={[styles.pauseBtn, { top: topPad + 6 }]} onPress={handlePause}>
-          <MaterialCommunityIcons name="pause" size={20} color={Colors.text} />
+          <Text style={styles.pauseIcon}>⏸</Text>
         </Pressable>
 
-        {/* Weapon Selector — just above bottom controls */}
+        {/* Kill streak toast */}
+        {streakCount > 0 && (
+          <View style={styles.streakBadge} pointerEvents="none">
+            <Text style={styles.streakText}>🔥 KILL STREAK +10 💎</Text>
+          </View>
+        )}
+
+        {/* Weapon Selector */}
         <WeaponSelector
           unlockedWeapons={playerStats.unlockedWeapons}
           selectedWeapon={gameState.currentWeapon}
@@ -136,16 +164,16 @@ export default function GameScreen() {
       <Modal visible={paused} transparent animationType="fade">
         <View style={styles.overlay}>
           <View style={styles.overlayCard}>
-            <MaterialCommunityIcons name="pause-circle" size={52} color={Colors.text} />
+            <Text style={styles.overlayEmoji}>⏸</Text>
             <Text style={styles.overlayTitle}>PAUSED</Text>
             <Pressable style={styles.overlayBtn} onPress={handleResume}>
-              <Text style={styles.overlayBtnText}>RESUME</Text>
+              <Text style={styles.overlayBtnText}>▶ RESUME</Text>
             </Pressable>
             <Pressable style={styles.overlaySecBtn} onPress={handleRestart}>
-              <Text style={styles.overlaySecText}>RESTART</Text>
+              <Text style={styles.overlaySecText}>↺ RESTART</Text>
             </Pressable>
             <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
-              <Text style={styles.overlaySecText}>MAIN MENU</Text>
+              <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
             </Pressable>
           </View>
         </View>
@@ -158,50 +186,52 @@ export default function GameScreen() {
             colors={resultWon ? ["rgba(0,0,0,0.92)", "rgba(0,30,0,0.96)"] : ["rgba(0,0,0,0.92)", "rgba(40,0,0,0.96)"]}
             style={styles.overlayCard}
           >
-            <MaterialCommunityIcons
-              name={resultWon ? "trophy" : "skull"}
-              size={64}
-              color={resultWon ? Colors.gold : Colors.accent}
-            />
+            <Text style={styles.overlayEmoji}>{resultWon ? "🏆" : "💀"}</Text>
             <Text style={[styles.overlayTitle, { color: resultWon ? Colors.gold : Colors.accent }]}>
               {resultWon ? "LEVEL CLEAR!" : "YOU DIED"}
             </Text>
             {resultWon && (
               <View style={styles.rewardRow}>
-                <MaterialCommunityIcons name="diamond" size={18} color={Colors.diamond} />
-                <Text style={styles.rewardText}>+{10 + level * 2} diamonds</Text>
+                <Text style={styles.rewardText}>💎 +{resultDiamonds} diamonds</Text>
               </View>
             )}
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <MaterialCommunityIcons name="skull" size={18} color={Colors.textSecondary} />
+                <Text style={styles.statEmoji}>💀</Text>
                 <Text style={styles.statVal}>{resultKills}</Text>
                 <Text style={styles.statLabel}>kills</Text>
               </View>
               <View style={styles.statItem}>
-                <MaterialCommunityIcons name="star" size={18} color={Colors.gold} />
+                <Text style={styles.statEmoji}>⭐</Text>
                 <Text style={styles.statVal}>{gameState.score}</Text>
                 <Text style={styles.statLabel}>score</Text>
               </View>
+              {gameState.killStreakBonus > 0 && (
+                <View style={styles.statItem}>
+                  <Text style={styles.statEmoji}>🔥</Text>
+                  <Text style={styles.statVal}>+{gameState.killStreakBonus}</Text>
+                  <Text style={styles.statLabel}>streak</Text>
+                </View>
+              )}
             </View>
             {resultWon ? (
               <>
-                {level < 10 && (
+                {level < MAX_LEVELS && (
                   <Pressable style={styles.overlayBtn} onPress={handleNextLevel}>
                     <Text style={styles.overlayBtnText}>NEXT LEVEL →</Text>
                   </Pressable>
                 )}
                 <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
-                  <Text style={styles.overlaySecText}>MAIN MENU</Text>
+                  <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
                 </Pressable>
               </>
             ) : (
               <>
                 <Pressable style={[styles.overlayBtn, { backgroundColor: Colors.accent }]} onPress={handleRestart}>
-                  <Text style={styles.overlayBtnText}>TRY AGAIN</Text>
+                  <Text style={styles.overlayBtnText}>↺ TRY AGAIN</Text>
                 </Pressable>
                 <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
-                  <Text style={styles.overlaySecText}>MAIN MENU</Text>
+                  <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
                 </Pressable>
               </>
             )}
@@ -225,6 +255,26 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(255,255,255,0.15)",
     alignItems: "center", justifyContent: "center",
   },
+  pauseIcon: { fontSize: 17, color: Colors.text, lineHeight: 20 },
+  streakBadge: {
+    position: "absolute",
+    top: 90,
+    left: 0, right: 0,
+    alignItems: "center",
+    pointerEvents: "none" as any,
+  },
+  streakText: {
+    color: "#FFD60A",
+    fontSize: 13,
+    fontFamily: "Inter_700Bold",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,214,10,0.4)",
+    overflow: "hidden",
+  },
   joystickArea: { position: "absolute", left: 22 },
   shootArea: { position: "absolute", right: 22 },
   overlay: {
@@ -238,12 +288,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border,
     overflow: "hidden",
   },
+  overlayEmoji: { fontSize: 52, lineHeight: 60 },
   overlayTitle: {
     color: Colors.text, fontSize: 28,
     fontFamily: "Inter_700Bold", letterSpacing: 3,
   },
   rewardRow: {
-    flexDirection: "row", alignItems: "center", gap: 6,
     backgroundColor: "rgba(0,212,255,0.12)",
     paddingHorizontal: 16, paddingVertical: 8,
     borderRadius: 12, borderWidth: 1, borderColor: "rgba(0,212,255,0.2)",
@@ -251,6 +301,7 @@ const styles = StyleSheet.create({
   rewardText: { color: Colors.diamond, fontSize: 18, fontFamily: "Inter_700Bold" },
   statsRow: { flexDirection: "row", gap: 24, marginVertical: 4 },
   statItem: { alignItems: "center", gap: 3 },
+  statEmoji: { fontSize: 18, lineHeight: 22 },
   statVal: { color: Colors.text, fontSize: 22, fontFamily: "Inter_700Bold" },
   statLabel: { color: Colors.textSecondary, fontSize: 11, fontFamily: "Inter_400Regular" },
   overlayBtn: {

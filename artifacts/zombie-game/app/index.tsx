@@ -1,15 +1,13 @@
 import { router } from "expo-router";
-import React, { useEffect } from "react";
+import React from "react";
 import {
   Pressable,
   StyleSheet,
   Text,
   View,
-  ImageBackground,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
@@ -40,7 +38,7 @@ export default function HomeScreen() {
   if (!isLoaded) {
     return (
       <View style={[styles.root, { justifyContent: "center", alignItems: "center" }]}>
-        <MaterialCommunityIcons name="skull" size={48} color={Colors.accent} />
+        <Text style={{ fontSize: 48 }}>💀</Text>
       </View>
     );
   }
@@ -52,30 +50,25 @@ export default function HomeScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Background grid pattern */}
-      <View style={styles.gridPattern} />
-
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: topPad + 8 }]}>
         <View style={styles.statChip}>
-          <MaterialCommunityIcons name="diamond" size={14} color={Colors.diamond} />
+          <Text style={styles.chipEmoji}>💎</Text>
           <Text style={styles.statValue}>{playerStats.diamonds}</Text>
         </View>
         <View style={styles.statChip}>
-          <MaterialCommunityIcons name="skull" size={14} color={Colors.textSecondary} />
+          <Text style={styles.chipEmoji}>💀</Text>
           <Text style={styles.statValue}>{playerStats.totalKills}</Text>
         </View>
         <View style={styles.statChip}>
-          <MaterialCommunityIcons name="trophy" size={14} color={Colors.gold} />
+          <Text style={styles.chipEmoji}>🏆</Text>
           <Text style={styles.statValue}>LV{playerStats.maxLevelReached}</Text>
         </View>
       </View>
 
-      {/* Hero section */}
+      {/* Hero */}
       <View style={styles.hero}>
-        <View style={styles.iconRow}>
-          <MaterialCommunityIcons name="skull-crossbones" size={64} color={Colors.accent} />
-        </View>
+        <Text style={styles.heroIcon}>💀</Text>
         <Text style={styles.titleTop}>ZOMBIE</Text>
         <Text style={styles.titleBottom}>SURVIVAL</Text>
         <Text style={styles.subtitle}>Survive the apocalypse</Text>
@@ -93,7 +86,7 @@ export default function HomeScreen() {
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
-            <MaterialCommunityIcons name="play" size={28} color="#FFF" />
+            <Text style={styles.playIcon}>▶</Text>
             <Text style={styles.playText}>PLAY</Text>
           </LinearGradient>
         </Pressable>
@@ -103,7 +96,7 @@ export default function HomeScreen() {
             style={({ pressed }) => [styles.secBtn, pressed && { opacity: 0.7 }]}
             onPress={handleArsenal}
           >
-            <MaterialCommunityIcons name="pistol" size={22} color={Colors.textSecondary} />
+            <Text style={styles.secEmoji}>🔫</Text>
             <Text style={styles.secLabel}>Arsenal</Text>
           </Pressable>
 
@@ -111,7 +104,7 @@ export default function HomeScreen() {
             style={({ pressed }) => [styles.secBtn, pressed && { opacity: 0.7 }]}
             onPress={handleShop}
           >
-            <MaterialCommunityIcons name="diamond" size={22} color={Colors.diamond} />
+            <Text style={styles.secEmoji}>💎</Text>
             <Text style={styles.secLabel}>Shop</Text>
           </Pressable>
         </View>
@@ -120,10 +113,16 @@ export default function HomeScreen() {
         {playerStats.gamesPlayed > 0 && (
           <View style={styles.sessionInfo}>
             <Text style={styles.sessionText}>
-              {playerStats.gamesPlayed} runs · Current level: {playerStats.currentLevel}
+              {playerStats.gamesPlayed} runs · Level {playerStats.currentLevel} / 50
             </Text>
           </View>
         )}
+
+        {/* Credits */}
+        <View style={styles.credits}>
+          <Text style={styles.creditsText}>Designed & Developed by Jatin Sharma</Text>
+          <Text style={styles.creditsSubText}>Powered by Claude AI</Text>
+        </View>
       </View>
     </View>
   );
@@ -133,11 +132,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.bg,
-  },
-  gridPattern: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    opacity: 0.03,
   },
   topBar: {
     flexDirection: "row",
@@ -156,6 +150,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
+  chipEmoji: { fontSize: 13 },
   statValue: {
     color: Colors.text,
     fontSize: 14,
@@ -167,8 +162,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 4,
   },
-  iconRow: {
-    marginBottom: 12,
+  heroIcon: {
+    fontSize: 64,
+    marginBottom: 8,
   },
   titleTop: {
     color: Colors.text,
@@ -196,7 +192,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     paddingHorizontal: 24,
-    gap: 16,
+    gap: 14,
   },
   playBtn: {
     borderRadius: 20,
@@ -214,6 +210,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     gap: 10,
   },
+  playIcon: { fontSize: 24, color: "#FFF" },
   playText: {
     color: "#FFF",
     fontSize: 22,
@@ -236,6 +233,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 14,
   },
+  secEmoji: { fontSize: 20 },
   secLabel: {
     color: Colors.textSecondary,
     fontSize: 14,
@@ -248,5 +246,25 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 12,
     fontFamily: "Inter_400Regular",
+  },
+  credits: {
+    alignItems: "center",
+    paddingTop: 4,
+    gap: 2,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.05)",
+    paddingTop: 10,
+  },
+  creditsText: {
+    color: "rgba(255,255,255,0.3)",
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    letterSpacing: 0.3,
+  },
+  creditsSubText: {
+    color: "rgba(255,255,255,0.18)",
+    fontSize: 10,
+    fontFamily: "Inter_400Regular",
+    letterSpacing: 0.2,
   },
 });

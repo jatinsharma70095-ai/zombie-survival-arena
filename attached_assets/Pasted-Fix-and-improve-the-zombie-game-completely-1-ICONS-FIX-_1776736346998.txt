@@ -1,0 +1,17 @@
+Fix and improve the zombie game completely:
+1. ICONS FIX: Replace ALL MaterialCommunityIcons with plain emoji so they work in browser — pause button ⏸, home ⌂, skull 💀, diamond 💎, trophy 🏆, reload ↺, play ▶, gun 🔫. No external icon library should be needed.
+2. TOUCH SCROLL FIX: Page scrolls when joystick or any button is touched. Add touch-action:none to root div and ALL game elements. Add e.preventDefault() on every touchstart and touchmove event throughout the entire game. Test that nothing causes page scroll.
+3. MINIGUN FIX: Hold-to-fire copies text instead of firing. Fix shoot button using touchstart and touchend events with preventDefault(). Minigun and all weapons should auto-fire continuously while finger is held on shoot button.
+4. HUD LAYOUT FIX: Health bar, diamonds, score going off screen on mobile. Fix ALL HUD elements to stay within safe area. Move ammo counter to top HUD — not overlapping weapon selector. Bottom controls: joystick on left only, shoot button on right only, nothing overlapping.
+5. SEPARATE PLAYER SAVES: Currently all players share same data. Fix this — each player must get their own separate localStorage using a unique randomly generated device ID stored on first visit. No two players should ever share progress, diamonds, or levels.
+6. PROGRESS SAVE: Player progress must auto-save after every level — current level reached, diamonds, unlocked weapons, total kills. When player closes and reopens game, they must continue exactly from where they left off.
+7. LEVELS: Increase total levels from 10 to 50. Balance difficulty progressively — each level adds more zombies, slightly faster speed, slightly more HP. Early levels easy and fun, level 50 very challenging.
+8. DIAMONDS BALANCE: Increase diamond rewards — minimum 30 diamonds at level 1, scaling up to 80 diamonds at level 50. Add kill streak bonus — 5 kills in a row gives +10 bonus diamonds. This makes weapon unlocking feel rewarding and achievable.
+9. ADSENSE FIX: The current web/index.html is incomplete and Google cannot verify the site. Properly fix the web/index.html template file for Expo web build — it must include all required Expo meta tags, bundle scripts, AND this AdSense code in the head tag:
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3938195193121476" crossorigin="anonymous"></script>
+Make sure the file is complete so game loads properly AND Google AdSense crawler can verify the site.”
+
+10. CREDITS: Add a small professional credits section in the game — on the home/main screen at the bottom show:
+‘Designed & Developed by Jatin Sharma’
+‘Powered by Claude AI’
+Style it professionally — small elegant text, not too big, looks genuine and polished.

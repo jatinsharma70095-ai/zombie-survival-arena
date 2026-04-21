@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 import React, {
   createContext,
   useCallback,
@@ -112,6 +113,8 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
   },
 };
 
+export const MAX_LEVELS = 50;
+
 export interface PlayerStats {
   diamonds: number;
   currentLevel: number;
@@ -120,6 +123,7 @@ export interface PlayerStats {
   selectedWeapon: WeaponId;
   totalKills: number;
   gamesPlayed: number;
+  killStreakBonusTotal: number;
 }
 
 export interface GameContextValue {
@@ -128,7 +132,7 @@ export interface GameContextValue {
   spendDiamonds: (amount: number) => boolean;
   unlockWeapon: (weaponId: WeaponId) => boolean;
   selectWeapon: (weaponId: WeaponId) => void;
-  completeLevel: (level: number, kills: number) => void;
+  completeLevel: (level: number, kills: number, streakBonus: number) => number;
   isLoaded: boolean;
 }
 
@@ -140,9 +144,28 @@ const DEFAULT_STATS: PlayerStats = {
   selectedWeapon: "pistol",
   totalKills: 0,
   gamesPlayed: 0,
+  killStreakBonusTotal: 0,
 };
 
-const STORAGE_KEY = "zombie_game_stats";
+const DEVICE_ID_KEY = "zombie_device_id";
+const STORAGE_PREFIX = "zombie_game_stats_";
+
+function getOrCreateDeviceId(): string {
+  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  }
+  return "native_default";
+}
+
+function getDiamondReward(level: number): number {
+  // Level 1 → 30, Level 50 → 80, linear scale
+  return Math.round(30 + (level - 1) * (50 / 49));
+}
 
 const GameContext = createContext<GameContextValue | null>(null);
 
@@ -150,9 +173,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [playerStats, setPlayerStats] = useState<PlayerStats>(DEFAULT_STATS);
   const [isLoaded, setIsLoaded] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const storageKeyRef = useRef<string>(STORAGE_PREFIX + "default");
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((data) => {
+    const deviceId = getOrCreateDeviceId();
+    storageKeyRef.current = STORAGE_PREFIX + deviceId;
+
+    AsyncStorage.getItem(storageKeyRef.current).then((data) => {
       if (data) {
         try {
           const parsed = JSON.parse(data) as PlayerStats;
@@ -166,8 +193,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const saveStats = useCallback((stats: PlayerStats) => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
-    }, 300);
+      AsyncStorage.setItem(storageKeyRef.current, JSON.stringify(stats));
+    }, 200);
   }, []);
 
   const updateStats = useCallback(
@@ -236,17 +263,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [updateStats]
   );
 
+  // Returns total diamond reward (base + streak bonus)
   const completeLevel = useCallback(
-    (level: number, kills: number) => {
-      const diamondReward = 10 + level * 2;
+    (level: number, kills: number, streakBonus: number): number => {
+      const baseDiamonds = getDiamondReward(level);
+      const total = baseDiamonds + streakBonus;
       updateStats((prev) => ({
         ...prev,
-        diamonds: prev.diamonds + diamondReward,
-        currentLevel: Math.min(level + 1, 10),
+        diamonds: prev.diamonds + total,
+        currentLevel: Math.min(level + 1, MAX_LEVELS),
         maxLevelReached: Math.max(prev.maxLevelReached, level + 1),
         totalKills: prev.totalKills + kills,
         gamesPlayed: prev.gamesPlayed + 1,
+        killStreakBonusTotal: prev.killStreakBonusTotal + streakBonus,
       }));
+      return total;
     },
     [updateStats]
   );

@@ -11,19 +11,18 @@ import {
   Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
 import { useGame, WEAPONS, WeaponId } from "@/context/GameContext";
 
-const WEAPON_ICONS: Record<WeaponId, string> = {
-  pistol: "pistol",
-  shotgun: "bullet",
-  sniper: "crosshairs-gps",
-  uzi: "pistol",
-  minigun: "shimmer",
-  bazooka: "rocket-launch",
+const WEAPON_EMOJI: Record<WeaponId, string> = {
+  pistol: "🔫",
+  shotgun: "⊙",
+  sniper: "🎯",
+  uzi: "↯",
+  minigun: "🌀",
+  bazooka: "🚀",
 };
 
 const WEAPON_ORDER: WeaponId[] = ["pistol", "shotgun", "sniper", "uzi", "minigun", "bazooka"];
@@ -40,7 +39,7 @@ export default function ArsenalScreen() {
     if (playerStats.diamonds < weapon.unlockCost) {
       Alert.alert(
         "Not Enough Diamonds",
-        `You need ${weapon.unlockCost} diamonds. Go to the shop to get more!`,
+        `You need ${weapon.unlockCost} 💎 diamonds. Go to the shop to get more!`,
         [
           { text: "Shop", onPress: () => router.push("/shop") },
           { text: "Cancel", style: "cancel" },
@@ -67,11 +66,11 @@ export default function ArsenalScreen() {
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPad + 8 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color={Colors.text} />
+          <Text style={styles.backIcon}>‹</Text>
         </Pressable>
         <Text style={styles.headerTitle}>ARSENAL</Text>
         <View style={styles.diamondBadge}>
-          <MaterialCommunityIcons name="diamond" size={14} color={Colors.diamond} />
+          <Text style={styles.diamondEmoji}>💎</Text>
           <Text style={styles.diamondText}>{playerStats.diamonds}</Text>
         </View>
       </View>
@@ -110,14 +109,12 @@ export default function ArsenalScreen() {
                   active && { backgroundColor: `${color}44` },
                 ]}
               >
-                <MaterialCommunityIcons
-                  name={WEAPON_ICONS[wid] as any}
-                  size={28}
-                  color={unlocked ? color : Colors.textMuted}
-                />
+                <Text style={[styles.weaponEmoji, !unlocked && { opacity: 0.4 }]}>
+                  {WEAPON_EMOJI[wid]}
+                </Text>
                 {!unlocked && (
                   <View style={styles.lockOverlay}>
-                    <MaterialCommunityIcons name="lock" size={14} color={Colors.textMuted} />
+                    <Text style={styles.lockEmoji}>🔒</Text>
                   </View>
                 )}
               </View>
@@ -148,15 +145,13 @@ export default function ArsenalScreen() {
               <View style={styles.weaponRight}>
                 {!unlocked ? (
                   <View style={styles.costBadge}>
-                    <MaterialCommunityIcons name="diamond" size={12} color={Colors.diamond} />
+                    <Text style={styles.costEmoji}>💎</Text>
                     <Text style={styles.costText}>{w.unlockCost}</Text>
                   </View>
                 ) : (
-                  <MaterialCommunityIcons
-                    name={active ? "check-circle" : "circle-outline"}
-                    size={24}
-                    color={active ? color : Colors.textMuted}
-                  />
+                  <Text style={[styles.checkIcon, { color: active ? color : Colors.textMuted }]}>
+                    {active ? "✓" : "○"}
+                  </Text>
                 )}
               </View>
             </Pressable>
@@ -169,15 +164,11 @@ export default function ArsenalScreen() {
         {selected && (
           <View style={styles.overlay}>
             <View style={styles.unlockCard}>
-              <MaterialCommunityIcons
-                name={WEAPON_ICONS[selected] as any}
-                size={52}
-                color={(Colors.weapons as Record<string, string>)[selected]}
-              />
+              <Text style={styles.unlockEmoji}>{WEAPON_EMOJI[selected]}</Text>
               <Text style={styles.unlockTitle}>{WEAPONS[selected].name}</Text>
               <Text style={styles.unlockDesc}>{WEAPONS[selected].description}</Text>
               <View style={styles.unlockCostRow}>
-                <MaterialCommunityIcons name="diamond" size={18} color={Colors.diamond} />
+                <Text style={styles.costEmojiLg}>💎</Text>
                 <Text style={styles.unlockCostText}>{WEAPONS[selected].unlockCost}</Text>
                 <Text style={styles.unlockCostSub}>
                   / {playerStats.diamonds} available
@@ -260,6 +251,7 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   backBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+  backIcon: { fontSize: 32, color: Colors.text, lineHeight: 36 },
   headerTitle: {
     color: Colors.text,
     fontSize: 16,
@@ -277,6 +269,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(0,212,255,0.2)",
   },
+  diamondEmoji: { fontSize: 13 },
   diamondText: { color: Colors.diamond, fontSize: 14, fontFamily: "Inter_600SemiBold" },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 12 },
@@ -307,14 +300,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
   },
+  weaponEmoji: { fontSize: 28, lineHeight: 34 },
   lockOverlay: {
     position: "absolute",
     bottom: 2,
     right: 2,
     backgroundColor: Colors.card,
     borderRadius: 8,
-    padding: 2,
+    padding: 1,
   },
+  lockEmoji: { fontSize: 12 },
   weaponInfo: { flex: 1, gap: 4 },
   weaponTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   weaponName: {
@@ -346,7 +341,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(0,212,255,0.2)",
   },
+  costEmoji: { fontSize: 12 },
   costText: { color: Colors.diamond, fontSize: 13, fontFamily: "Inter_700Bold" },
+  checkIcon: { fontSize: 24 },
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
@@ -363,6 +360,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  unlockEmoji: { fontSize: 52, lineHeight: 60 },
   unlockTitle: {
     color: Colors.text,
     fontSize: 24,
@@ -385,6 +383,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(0,212,255,0.15)",
   },
+  costEmojiLg: { fontSize: 18 },
   unlockCostText: { color: Colors.diamond, fontSize: 22, fontFamily: "Inter_700Bold" },
   unlockCostSub: { color: Colors.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
   unlockBtn: {

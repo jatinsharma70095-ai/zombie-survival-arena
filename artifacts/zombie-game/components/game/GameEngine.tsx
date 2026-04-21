@@ -21,6 +21,9 @@ const STAMINA_MAX = 100;
 const STAMINA_DRAIN = 1.5;
 const STAMINA_REGEN = 1.2;
 const STAMINA_RECOVER_DELAY = 8000;
+const KILL_STREAK_COUNT = 5;
+const KILL_STREAK_WINDOW = 8000; // ms
+const KILL_STREAK_BONUS = 10;
 
 export interface Position { x: number; y: number; }
 
@@ -68,6 +71,7 @@ export interface GameState {
   lastShotX: number;
   lastShotY: number;
   recentKills: RecentKill[];
+  killStreakBonus: number;
 }
 
 export interface GameEngineHandle {
@@ -83,13 +87,15 @@ export interface GameEngineHandle {
 }
 
 function getLevelConfig(level: number) {
-  const t = 1 + (level - 1) * 0.05;
+  // Smooth difficulty curve: level 1 easy, level 50 very challenging
+  const t = 1 + (level - 1) * 0.08;
+  const waveBase = [4, 7, 10];
   return {
     toughMult: t,
-    waveSizes: [Math.floor(4 * t), Math.floor(7 * t), Math.floor(10 * t)],
+    waveSizes: waveBase.map(b => Math.floor(b * t)),
     totalWaves: 3,
     zombieHp: Math.floor(50 * t),
-    zombieSpeed: ZOMBIE_BASE_SPEED * (1 + (level - 1) * 0.06),
+    zombieSpeed: ZOMBIE_BASE_SPEED * (1 + (level - 1) * 0.04),
     zombieDamage: Math.floor(8 * t),
   };
 }
@@ -116,8 +122,12 @@ function idGen() { return Date.now().toString(36) + Math.random().toString(36).s
 
 export const GameEngine = React.forwardRef<
   GameEngineHandle,
-  { onStateChange: (s: GameState) => void; onGameEnd: (won: boolean, kills: number) => void }
->(({ onStateChange, onGameEnd }, ref) => {
+  {
+    onStateChange: (s: GameState) => void;
+    onGameEnd: (won: boolean, kills: number, streakBonus: number) => void;
+    onKillStreak?: (bonus: number) => void;
+  }
+>(({ onStateChange, onGameEnd, onKillStreak }, ref) => {
   const stateRef = useRef<GameState | null>(null);
   const lastTimeRef = useRef(0);
   const rafRef = useRef(0);
@@ -127,11 +137,15 @@ export const GameEngine = React.forwardRef<
   const reloadStartRef = useRef(0);
   const staminaExhaustedTimeRef = useRef(0);
   const configRef = useRef(getLevelConfig(1));
+  const killTimestampsRef = useRef<number[]>([]);
+  const streakBonusRef = useRef(0);
 
   const initState = useCallback((level: number, weapon: WeaponId): GameState => {
     const cfg = getLevelConfig(level);
     configRef.current = cfg;
     const w = WEAPONS[weapon];
+    killTimestampsRef.current = [];
+    streakBonusRef.current = 0;
     return {
       player: { x: GAME_W / 2, y: GAME_H / 2, angle: 0 },
       playerHp: 100, maxHp: 100,
@@ -147,8 +161,24 @@ export const GameEngine = React.forwardRef<
       lastDamageTime: 0, lastShotTime: 0,
       lastShotAngle: 0, lastShotX: 0, lastShotY: 0,
       recentKills: [],
+      killStreakBonus: 0,
     };
   }, []);
+
+  const recordKill = useCallback((ts: number) => {
+    const now = ts;
+    killTimestampsRef.current.push(now);
+    // Prune old kills outside the window
+    killTimestampsRef.current = killTimestampsRef.current.filter(t => now - t < KILL_STREAK_WINDOW);
+    if (killTimestampsRef.current.length >= KILL_STREAK_COUNT) {
+      // Award streak bonus, reset window
+      killTimestampsRef.current = [];
+      streakBonusRef.current += KILL_STREAK_BONUS;
+      onKillStreak?.(KILL_STREAK_BONUS);
+      return KILL_STREAK_BONUS;
+    }
+    return 0;
+  }, [onKillStreak]);
 
   const tick = useCallback((ts: number) => {
     if (pausedRef.current || !stateRef.current) {
@@ -169,7 +199,7 @@ export const GameEngine = React.forwardRef<
       if (nw > cfg.totalWaves) {
         stateRef.current = { ...s, victory: true };
         onStateChange({ ...stateRef.current });
-        onGameEnd(true, s.kills);
+        onGameEnd(true, s.kills, streakBonusRef.current);
         return;
       }
       const sz = cfg.waveSizes[nw - 1] ?? cfg.waveSizes[cfg.waveSizes.length - 1];
@@ -215,7 +245,6 @@ export const GameEngine = React.forwardRef<
         lastDamageTime = ts;
         return z;
       }
-      // Move toward player aggressively + slight wander
       const nx = dx / dist;
       const ny = dy / dist;
       const wander = 0.08;
@@ -232,16 +261,26 @@ export const GameEngine = React.forwardRef<
     if (playerHp <= 0) {
       stateRef.current = { ...s, playerHp: 0, gameOver: true };
       onStateChange({ ...stateRef.current });
-      onGameEnd(false, s.kills);
+      onGameEnd(false, s.kills, 0);
       return;
     }
 
-    // Bullet movement
+    // Bullet movement + hit detection
     let kills = s.kills;
     let score = s.score;
+    let killStreakBonus = s.killStreakBonus;
     const explosions = [...s.explosions.filter(e => ts - e.createdAt < 500)];
     const updatedZombies = [...newZombies];
     const survivingBullets: Bullet[] = [];
+
+    const processKill = (zj: Zombie, j: number, bx: number, by: number) => {
+      kills++;
+      score += 10;
+      recentKills.push({ id: zj.id, x: zj.x, y: zj.y, time: ts });
+      updatedZombies[j] = { ...zj, hp: 0, isDead: true, deathTime: ts };
+      const bonus = recordKill(ts);
+      killStreakBonus += bonus;
+    };
 
     for (const b of s.bullets) {
       const nx = b.x + b.vx * (dt / 16);
@@ -256,7 +295,7 @@ export const GameEngine = React.forwardRef<
             const ddx = z.x - nx; const ddy = z.y - ny;
             if (Math.sqrt(ddx * ddx + ddy * ddy) < EXPLOSION_RADIUS) {
               const nhp = z.hp - b.damage;
-              if (nhp <= 0) { kills++; score += 10; recentKills.push({ id: z.id, x: z.x, y: z.y, time: ts }); updatedZombies[i] = { ...z, hp: 0, isDead: true, deathTime: ts }; }
+              if (nhp <= 0) processKill(z, i, nx, ny);
               else updatedZombies[i] = { ...z, hp: nhp };
             }
           });
@@ -277,13 +316,13 @@ export const GameEngine = React.forwardRef<
               const ex = zj.x - nx; const ey = zj.y - ny;
               if (Math.sqrt(ex * ex + ey * ey) < EXPLOSION_RADIUS) {
                 const nhp = zj.hp - b.damage;
-                if (nhp <= 0) { kills++; score += 10; recentKills.push({ id: zj.id, x: zj.x, y: zj.y, time: ts }); updatedZombies[j] = { ...zj, hp: 0, isDead: true, deathTime: ts }; }
+                if (nhp <= 0) processKill(zj, j, nx, ny);
                 else updatedZombies[j] = { ...zj, hp: nhp };
               }
             });
           } else {
             const nhp = z.hp - b.damage;
-            if (nhp <= 0) { kills++; score += 10; recentKills.push({ id: z.id, x: z.x, y: z.y, time: ts }); updatedZombies[i] = { ...z, hp: 0, isDead: true, deathTime: ts }; }
+            if (nhp <= 0) processKill(z, i, nx, ny);
             else updatedZombies[i] = { ...z, hp: nhp };
           }
           hit = true; break;
@@ -308,14 +347,14 @@ export const GameEngine = React.forwardRef<
     stateRef.current = {
       ...s, playerHp, stamina, staminaExhausted,
       bullets: survivingBullets, zombies: finalZombies, explosions,
-      kills, score, isReloading, reloadProgress, ammo,
+      kills, score, killStreakBonus, isReloading, reloadProgress, ammo,
       zombiesRemainingInWave: aliveZombies,
       player: { ...s.player, angle: autoAngle },
       lastDamageTime, recentKills,
     };
     onStateChange({ ...stateRef.current });
     rafRef.current = requestAnimationFrame(tick);
-  }, [onStateChange, onGameEnd]);
+  }, [onStateChange, onGameEnd, recordKill]);
 
   useImperativeHandle(ref, () => ({
     getState: () => stateRef.current!,

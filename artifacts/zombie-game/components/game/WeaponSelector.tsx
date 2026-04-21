@@ -1,16 +1,15 @@
 import React from "react";
 import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { WeaponId, WEAPONS } from "@/context/GameContext";
 
-const WEAPON_ICONS: Record<WeaponId, string> = {
-  pistol: "pistol",
-  shotgun: "dots-horizontal-circle",
-  sniper: "crosshairs-gps",
-  uzi: "ray-start-arrow",
-  minigun: "rotate-right",
-  bazooka: "rocket-launch",
+const WEAPON_EMOJI: Record<WeaponId, string> = {
+  pistol: "🔫",
+  shotgun: "⊙",
+  sniper: "🎯",
+  uzi: "↯",
+  minigun: "🌀",
+  bazooka: "🚀",
 };
 
 const WEAPON_ORDER: WeaponId[] = ["pistol", "shotgun", "sniper", "uzi", "minigun", "bazooka"];
@@ -28,6 +27,7 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
+        scrollEnabled={true}
       >
         {WEAPON_ORDER.map((wid) => {
           const w = WEAPONS[wid];
@@ -45,11 +45,11 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
               onPress={() => unlocked && onSelect(wid)}
               disabled={!unlocked}
             >
-              <MaterialCommunityIcons
-                name={WEAPON_ICONS[wid] as any}
-                size={20}
-                color={!unlocked ? Colors.textMuted : selected ? color : Colors.textSecondary}
-              />
+              <Text style={[styles.weaponEmoji, {
+                opacity: !unlocked ? 0.4 : 1,
+              }]}>
+                {WEAPON_EMOJI[wid]}
+              </Text>
               <Text style={[styles.weaponLabel, {
                 color: !unlocked ? Colors.textMuted : selected ? color : Colors.textSecondary,
               }]}>
@@ -57,7 +57,7 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
               </Text>
               {selected && <View style={[styles.selectedDot, { backgroundColor: color }]} />}
               {!unlocked && (
-                <MaterialCommunityIcons name="lock" size={10} color={Colors.textMuted} style={styles.lockIcon} />
+                <Text style={styles.lockIcon}>🔒</Text>
               )}
             </Pressable>
           );
@@ -88,10 +88,14 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.55)",
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.1)",
-    gap: 3,
+    gap: 2,
     position: "relative",
   },
   locked: { opacity: 0.35 },
+  weaponEmoji: {
+    fontSize: 22,
+    lineHeight: 26,
+  },
   weaponLabel: {
     fontSize: 7.5,
     fontFamily: "Inter_600SemiBold",
@@ -105,5 +109,10 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
   },
-  lockIcon: { position: "absolute", top: 4, right: 4 },
+  lockIcon: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    fontSize: 9,
+  },
 });

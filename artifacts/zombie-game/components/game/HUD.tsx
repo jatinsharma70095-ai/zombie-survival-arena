@@ -1,6 +1,5 @@
 import React from "react";
 import { View, Text, StyleSheet, Platform } from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import Colors from "@/constants/colors";
 import { GameState } from "./GameEngine";
 import { WEAPONS } from "@/context/GameContext";
@@ -11,7 +10,7 @@ function Bar({ icon, color, value, max }: { icon: string; color: string; value: 
   const pct = Math.max(0, Math.min(1, value / max));
   return (
     <View style={styles.barRow}>
-      <MaterialCommunityIcons name={icon as any} size={13} color={color} style={styles.barIcon} />
+      <Text style={[styles.barIcon, { color }]}>{icon}</Text>
       <View style={styles.barBg}>
         <View style={[styles.barFill, { width: `${pct * 100}%` as any, backgroundColor: color }]} />
       </View>
@@ -27,28 +26,28 @@ export function HUD({ state, diamonds }: Props) {
 
   return (
     <>
-      {/* ── TOP LEFT: HP + STAMINA ── */}
+      {/* TOP LEFT: HP + STAMINA */}
       <View style={styles.topLeft}>
-        <Bar icon="heart" color={hpColor} value={state.playerHp} max={state.maxHp} />
-        <Bar icon="lightning-bolt" color={staminaColor} value={state.stamina} max={100} />
+        <Bar icon="❤" color={hpColor} value={state.playerHp} max={state.maxHp} />
+        <Bar icon="⚡" color={staminaColor} value={state.stamina} max={100} />
       </View>
 
-      {/* ── TOP CENTER: Level + Wave ── */}
+      {/* TOP CENTER: Level + Wave */}
       <View style={styles.topCenter} pointerEvents="none">
         <View style={styles.levelBadge}>
           <Text style={styles.levelText}>LVL {state.level}</Text>
         </View>
         <Text style={styles.waveText}>WAVE {state.wave} / 3</Text>
         <View style={styles.killsRow}>
-          <MaterialCommunityIcons name="skull" size={11} color={Colors.textSecondary} />
+          <Text style={styles.killsIcon}>💀</Text>
           <Text style={styles.killsText}>{state.kills}</Text>
         </View>
       </View>
 
-      {/* ── TOP RIGHT: Diamonds + Ammo ── */}
+      {/* TOP RIGHT: Diamonds + Ammo */}
       <View style={styles.topRight}>
         <View style={styles.diamondRow}>
-          <MaterialCommunityIcons name="diamond" size={14} color={Colors.diamond} />
+          <Text style={styles.diamondIcon}>💎</Text>
           <Text style={styles.diamondText}>{diamonds}</Text>
         </View>
         <View style={[styles.ammoRow, state.isReloading && styles.ammoRowReloading]}>
@@ -59,7 +58,7 @@ export function HUD({ state, diamonds }: Props) {
             </View>
           ) : (
             <>
-              <MaterialCommunityIcons name="bullet" size={11} color={Colors.ammo} />
+              <Text style={styles.ammoBullet}>•</Text>
               <Text style={styles.ammoText}>{state.ammo}</Text>
               <Text style={styles.ammoSep}>/</Text>
               <Text style={styles.ammoMaxText}>{state.maxAmmo}</Text>
@@ -69,7 +68,7 @@ export function HUD({ state, diamonds }: Props) {
         <Text style={styles.weaponNameText}>{weapon.name.toUpperCase()}</Text>
       </View>
 
-      {/* ── EXHAUSTED BADGE ── */}
+      {/* EXHAUSTED BADGE */}
       {state.staminaExhausted && (
         <View style={styles.exhaustedBadge} pointerEvents="none">
           <Text style={styles.exhaustedText}>EXHAUSTED</Text>
@@ -92,7 +91,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
   },
-  barIcon: { width: 16 },
+  barIcon: { width: 16, fontSize: 12, textAlign: "center" },
   barBg: {
     flex: 1,
     height: 7,
@@ -134,6 +133,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 3,
   },
+  killsIcon: { fontSize: 10 },
   killsText: {
     color: Colors.textSecondary,
     fontSize: 11,
@@ -158,6 +158,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(0,212,255,0.3)",
   },
+  diamondIcon: { fontSize: 13 },
   diamondText: {
     color: Colors.diamond,
     fontSize: 13,
@@ -179,6 +180,11 @@ const styles = StyleSheet.create({
     borderColor: Colors.ammo,
     backgroundColor: "rgba(255,159,10,0.2)",
     minWidth: 80,
+  },
+  ammoBullet: {
+    color: Colors.ammo,
+    fontSize: 14,
+    lineHeight: 14,
   },
   ammoText: {
     color: Colors.ammo,
