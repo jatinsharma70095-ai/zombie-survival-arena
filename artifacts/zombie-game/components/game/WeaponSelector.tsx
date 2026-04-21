@@ -10,9 +10,15 @@ const WEAPON_EMOJI: Record<WeaponId, string> = {
   uzi: "↯",
   minigun: "🌀",
   bazooka: "🚀",
+  flamethrower: "🔥",
+  grenadelauncher: "💣",
+  lasergun: "⚡",
 };
 
-const WEAPON_ORDER: WeaponId[] = ["pistol", "shotgun", "sniper", "uzi", "minigun", "bazooka"];
+const WEAPON_ORDER: WeaponId[] = [
+  "pistol", "shotgun", "sniper", "uzi", "minigun",
+  "bazooka", "flamethrower", "grenadelauncher", "lasergun",
+];
 
 interface Props {
   unlockedWeapons: WeaponId[];
@@ -45,9 +51,7 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
               onPress={() => unlocked && onSelect(wid)}
               disabled={!unlocked}
             >
-              <Text style={[styles.weaponEmoji, {
-                opacity: !unlocked ? 0.4 : 1,
-              }]}>
+              <Text style={[styles.weaponEmoji, { opacity: !unlocked ? 0.4 : 1 }]}>
                 {WEAPON_EMOJI[wid]}
               </Text>
               <Text style={[styles.weaponLabel, {
@@ -56,9 +60,7 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
                 {w.name}
               </Text>
               {selected && <View style={[styles.selectedDot, { backgroundColor: color }]} />}
-              {!unlocked && (
-                <Text style={styles.lockIcon}>🔒</Text>
-              )}
+              {!unlocked && <Text style={styles.lockIcon}>🔒</Text>}
             </Pressable>
           );
         })}
@@ -92,10 +94,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   locked: { opacity: 0.35 },
-  weaponEmoji: {
-    fontSize: 22,
-    lineHeight: 26,
-  },
+  weaponEmoji: { fontSize: 22, lineHeight: 26 },
   weaponLabel: {
     fontSize: 7.5,
     fontFamily: "Inter_600SemiBold",
@@ -109,10 +108,5 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 2.5,
   },
-  lockIcon: {
-    position: "absolute",
-    top: 2,
-    right: 2,
-    fontSize: 9,
-  },
+  lockIcon: { position: "absolute", top: 2, right: 2, fontSize: 9 },
 });

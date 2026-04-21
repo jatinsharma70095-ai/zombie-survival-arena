@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, StyleSheet, Text, Pressable, Platform, Modal,
+  View, StyleSheet, Text, Pressable, Platform, Modal, Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,6 +29,9 @@ const INITIAL_STATE: GameState = {
   lastShotAngle: 0, lastShotX: 0, lastShotY: 0,
   recentKills: [],
   killStreakBonus: 0,
+  isEndless: false,
+  endlessRound: 0,
+  hordeActive: false,
 };
 
 // Inject touch-action: none globally on web
@@ -40,7 +43,6 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
     * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
   `;
   document.head.appendChild(style);
-  // Prevent all scroll/zoom on document
   document.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false });
   document.addEventListener("touchstart", (e) => {
     if ((e.target as HTMLElement)?.tagName !== "INPUT") e.preventDefault();
@@ -49,9 +51,11 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
 
 export default function GameScreen() {
   const params = useLocalSearchParams<{ level?: string }>();
-  const level = parseInt(params.level ?? "1", 10);
+  const levelParam = parseInt(params.level ?? "1", 10);
+  const isEndless = levelParam > MAX_LEVELS;
+  const level = isEndless ? MAX_LEVELS : levelParam;
   const insets = useSafeAreaInsets();
-  const { playerStats, completeLevel, addDiamonds } = useGame();
+  const { playerStats, completeLevel, addDiamonds, saveEndlessScore } = useGame();
   const engineRef = useRef<GameEngineHandle>(null);
   const [gameState, setGameState] = useState<GameState>(INITIAL_STATE);
   const [paused, setPaused] = useState(false);
@@ -59,15 +63,21 @@ export default function GameScreen() {
   const [resultWon, setResultWon] = useState(false);
   const [resultKills, setResultKills] = useState(0);
   const [resultDiamonds, setResultDiamonds] = useState(0);
+  const [resultScore, setResultScore] = useState(0);
   const [streakCount, setStreakCount] = useState(0);
+  const [hordeWarning, setHordeWarning] = useState(false);
+  const hordeOpacity = useRef(new Animated.Value(0)).current;
 
   const topPad = Platform.OS === "web" ? 44 : insets.top;
   const botPad = Platform.OS === "web" ? 24 : insets.bottom;
 
   useEffect(() => {
-    const t = setTimeout(() => engineRef.current?.startGame(level, playerStats.selectedWeapon), 100);
+    const t = setTimeout(
+      () => engineRef.current?.startGame(level, playerStats.selectedWeapon, isEndless),
+      100
+    );
     return () => clearTimeout(t);
-  }, [level, playerStats.selectedWeapon]);
+  }, [level, playerStats.selectedWeapon, isEndless]);
 
   const handleStateChange = useCallback((s: GameState) => setGameState(s), []);
 
@@ -76,16 +86,31 @@ export default function GameScreen() {
     addDiamonds(bonus);
   }, [addDiamonds]);
 
-  const handleGameEnd = useCallback((won: boolean, kills: number, streakBonus: number) => {
-    setResultWon(won); setResultKills(kills); setShowResult(true);
+  const handleHorde = useCallback(() => {
+    setHordeWarning(true);
+    Animated.sequence([
+      Animated.timing(hordeOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(1800),
+      Animated.timing(hordeOpacity, { toValue: 0, duration: 600, useNativeDriver: true }),
+    ]).start(() => setHordeWarning(false));
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  }, [hordeOpacity]);
+
+  const handleGameEnd = useCallback((won: boolean, kills: number, streakBonus: number, score: number) => {
+    setResultWon(won); setResultKills(kills); setResultScore(score); setShowResult(true);
     if (won) {
-      const total = completeLevel(level, kills, streakBonus);
-      setResultDiamonds(total);
+      if (isEndless) {
+        // Endless mode: you never "win" — only die
+      } else {
+        const total = completeLevel(level, kills, streakBonus);
+        setResultDiamonds(total);
+      }
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
+      if (isEndless) saveEndlessScore(score);
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [level, completeLevel]);
+  }, [level, completeLevel, isEndless, saveEndlessScore]);
 
   const handleMove = useCallback((dx: number, dy: number, sprinting: boolean) => {
     engineRef.current?.movePlayer(dx, dy, sprinting);
@@ -102,14 +127,20 @@ export default function GameScreen() {
   const handleResume = () => { setPaused(false); engineRef.current?.resumeGame(); };
   const handleRestart = () => {
     setShowResult(false); setPaused(false); setStreakCount(0);
-    engineRef.current?.startGame(level, playerStats.selectedWeapon);
+    engineRef.current?.startGame(level, playerStats.selectedWeapon, isEndless);
   };
   const handleHome = () => router.replace("/");
   const handleNextLevel = () => {
-    if (level >= MAX_LEVELS) { router.replace("/"); return; }
     setShowResult(false); setStreakCount(0);
-    router.replace({ pathname: "/game", params: { level: (level + 1).toString() } });
+    if (level >= MAX_LEVELS) {
+      // Enter endless mode
+      router.replace({ pathname: "/game", params: { level: (MAX_LEVELS + 1).toString() } });
+    } else {
+      router.replace({ pathname: "/game", params: { level: (level + 1).toString() } });
+    }
   };
+
+  const isLastNormal = level >= MAX_LEVELS;
 
   return (
     <View style={styles.root}>
@@ -118,9 +149,9 @@ export default function GameScreen() {
         onStateChange={handleStateChange}
         onGameEnd={handleGameEnd}
         onKillStreak={handleKillStreak}
+        onHorde={handleHorde}
       />
 
-      {/* Game canvas */}
       {Platform.OS === "web"
         ? <GameCanvasHTML state={gameState} />
         : <GameCanvas state={gameState} />
@@ -130,31 +161,40 @@ export default function GameScreen() {
       <View style={[styles.hud, { paddingTop: topPad + 6 }]} pointerEvents="box-none">
         <HUD state={gameState} diamonds={playerStats.diamonds} />
 
-        {/* Pause button */}
+        {isEndless && (
+          <View style={styles.endlessBadge} pointerEvents="none">
+            <Text style={styles.endlessText}>♾ ENDLESS</Text>
+          </View>
+        )}
+
         <Pressable style={[styles.pauseBtn, { top: topPad + 6 }]} onPress={handlePause}>
           <Text style={styles.pauseIcon}>⏸</Text>
         </Pressable>
 
-        {/* Kill streak toast */}
         {streakCount > 0 && (
           <View style={styles.streakBadge} pointerEvents="none">
             <Text style={styles.streakText}>🔥 KILL STREAK +10 💎</Text>
           </View>
         )}
 
-        {/* Weapon Selector */}
+        {/* Horde warning */}
+        {hordeWarning && (
+          <Animated.View style={[styles.hordeWarning, { opacity: hordeOpacity }]} pointerEvents="none">
+            <Text style={styles.hordeText}>⚠ HORDE INCOMING! ⚠</Text>
+            <Text style={styles.hordeSubText}>RUN OR FIGHT</Text>
+          </Animated.View>
+        )}
+
         <WeaponSelector
           unlockedWeapons={playerStats.unlockedWeapons}
           selectedWeapon={gameState.currentWeapon}
           onSelect={handleWeaponSelect as any}
         />
 
-        {/* LEFT: Joystick */}
         <View style={[styles.joystickArea, { bottom: botPad + 18 }]}>
           <Joystick onMove={handleMove} side="left" size={112} />
         </View>
 
-        {/* RIGHT: Shoot + Reload */}
         <View style={[styles.shootArea, { bottom: botPad + 18 }]}>
           <ShootButton onShootAt={handleShoot} onReload={handleReload} />
         </View>
@@ -186,53 +226,88 @@ export default function GameScreen() {
             colors={resultWon ? ["rgba(0,0,0,0.92)", "rgba(0,30,0,0.96)"] : ["rgba(0,0,0,0.92)", "rgba(40,0,0,0.96)"]}
             style={styles.overlayCard}
           >
-            <Text style={styles.overlayEmoji}>{resultWon ? "🏆" : "💀"}</Text>
-            <Text style={[styles.overlayTitle, { color: resultWon ? Colors.gold : Colors.accent }]}>
-              {resultWon ? "LEVEL CLEAR!" : "YOU DIED"}
-            </Text>
-            {resultWon && (
-              <View style={styles.rewardRow}>
-                <Text style={styles.rewardText}>💎 +{resultDiamonds} diamonds</Text>
-              </View>
-            )}
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <Text style={styles.statEmoji}>💀</Text>
-                <Text style={styles.statVal}>{resultKills}</Text>
-                <Text style={styles.statLabel}>kills</Text>
-              </View>
-              <View style={styles.statItem}>
-                <Text style={styles.statEmoji}>⭐</Text>
-                <Text style={styles.statVal}>{gameState.score}</Text>
-                <Text style={styles.statLabel}>score</Text>
-              </View>
-              {gameState.killStreakBonus > 0 && (
-                <View style={styles.statItem}>
-                  <Text style={styles.statEmoji}>🔥</Text>
-                  <Text style={styles.statVal}>+{gameState.killStreakBonus}</Text>
-                  <Text style={styles.statLabel}>streak</Text>
-                </View>
-              )}
-            </View>
-            {resultWon ? (
+            {isEndless ? (
               <>
-                {level < MAX_LEVELS && (
-                  <Pressable style={styles.overlayBtn} onPress={handleNextLevel}>
-                    <Text style={styles.overlayBtnText}>NEXT LEVEL →</Text>
-                  </Pressable>
-                )}
+                <Text style={styles.overlayEmoji}>♾</Text>
+                <Text style={[styles.overlayTitle, { color: Colors.gold }]}>ENDLESS RUN ENDED</Text>
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statEmoji}>💀</Text>
+                    <Text style={styles.statVal}>{resultKills}</Text>
+                    <Text style={styles.statLabel}>kills</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statEmoji}>⭐</Text>
+                    <Text style={styles.statVal}>{resultScore}</Text>
+                    <Text style={styles.statLabel}>score</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statEmoji}>🏆</Text>
+                    <Text style={styles.statVal}>{playerStats.endlessBestScore}</Text>
+                    <Text style={styles.statLabel}>best</Text>
+                  </View>
+                </View>
+                <Pressable style={[styles.overlayBtn, { backgroundColor: "#4A0A6C" }]} onPress={handleRestart}>
+                  <Text style={styles.overlayBtnText}>♾ TRY AGAIN</Text>
+                </Pressable>
                 <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
                   <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
                 </Pressable>
               </>
             ) : (
               <>
-                <Pressable style={[styles.overlayBtn, { backgroundColor: Colors.accent }]} onPress={handleRestart}>
-                  <Text style={styles.overlayBtnText}>↺ TRY AGAIN</Text>
-                </Pressable>
-                <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
-                  <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
-                </Pressable>
+                <Text style={styles.overlayEmoji}>{resultWon ? "🏆" : "💀"}</Text>
+                <Text style={[styles.overlayTitle, { color: resultWon ? Colors.gold : Colors.accent }]}>
+                  {resultWon ? "LEVEL CLEAR!" : "YOU DIED"}
+                </Text>
+                {resultWon && (
+                  <View style={styles.rewardRow}>
+                    <Text style={styles.rewardText}>💎 +{resultDiamonds} diamonds</Text>
+                  </View>
+                )}
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statEmoji}>💀</Text>
+                    <Text style={styles.statVal}>{resultKills}</Text>
+                    <Text style={styles.statLabel}>kills</Text>
+                  </View>
+                  <View style={styles.statItem}>
+                    <Text style={styles.statEmoji}>⭐</Text>
+                    <Text style={styles.statVal}>{resultScore}</Text>
+                    <Text style={styles.statLabel}>score</Text>
+                  </View>
+                  {gameState.killStreakBonus > 0 && (
+                    <View style={styles.statItem}>
+                      <Text style={styles.statEmoji}>🔥</Text>
+                      <Text style={styles.statVal}>+{gameState.killStreakBonus}</Text>
+                      <Text style={styles.statLabel}>streak</Text>
+                    </View>
+                  )}
+                </View>
+                {resultWon ? (
+                  <>
+                    <Pressable
+                      style={[styles.overlayBtn, isLastNormal ? { backgroundColor: "#4A0A6C" } : {}]}
+                      onPress={handleNextLevel}
+                    >
+                      <Text style={styles.overlayBtnText}>
+                        {isLastNormal ? "♾ ENTER ENDLESS MODE" : "NEXT LEVEL →"}
+                      </Text>
+                    </Pressable>
+                    <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
+                      <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Pressable style={[styles.overlayBtn, { backgroundColor: Colors.accent }]} onPress={handleRestart}>
+                      <Text style={styles.overlayBtnText}>↺ TRY AGAIN</Text>
+                    </Pressable>
+                    <Pressable style={styles.overlaySecBtn} onPress={handleHome}>
+                      <Text style={styles.overlaySecText}>🏠 MAIN MENU</Text>
+                    </Pressable>
+                  </>
+                )}
               </>
             )}
           </LinearGradient>
@@ -256,6 +331,22 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   pauseIcon: { fontSize: 17, color: Colors.text, lineHeight: 20 },
+  endlessBadge: {
+    position: "absolute",
+    top: 60, left: 0, right: 0,
+    alignItems: "center",
+  },
+  endlessText: {
+    color: "#BF5AF2",
+    fontSize: 11,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 2,
+    backgroundColor: "rgba(100,0,180,0.25)",
+    paddingHorizontal: 12, paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1, borderColor: "rgba(191,90,242,0.4)",
+    overflow: "hidden",
+  },
   streakBadge: {
     position: "absolute",
     top: 90,
@@ -268,12 +359,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_700Bold",
     backgroundColor: "rgba(0,0,0,0.7)",
-    paddingHorizontal: 14,
-    paddingVertical: 5,
+    paddingHorizontal: 14, paddingVertical: 5,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255,214,10,0.4)",
+    borderWidth: 1, borderColor: "rgba(255,214,10,0.4)",
     overflow: "hidden",
+  },
+  hordeWarning: {
+    position: "absolute",
+    top: "28%",
+    left: 0, right: 0,
+    alignItems: "center",
+    pointerEvents: "none" as any,
+    gap: 4,
+  },
+  hordeText: {
+    color: "#FF3B30",
+    fontSize: 22,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: 3,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    paddingHorizontal: 20, paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2, borderColor: "rgba(255,59,48,0.6)",
+    overflow: "hidden",
+  },
+  hordeSubText: {
+    color: "rgba(255,100,80,0.8)",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 4,
   },
   joystickArea: { position: "absolute", left: 22 },
   shootArea: { position: "absolute", right: 22 },
@@ -290,7 +407,7 @@ const styles = StyleSheet.create({
   },
   overlayEmoji: { fontSize: 52, lineHeight: 60 },
   overlayTitle: {
-    color: Colors.text, fontSize: 28,
+    color: Colors.text, fontSize: 26,
     fontFamily: "Inter_700Bold", letterSpacing: 3,
   },
   rewardRow: {

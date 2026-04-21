@@ -7,7 +7,6 @@ interface Props { state: GameState; }
 interface BloodSplatter { id: string; x: number; y: number; r: number; alpha: number; drops: Array<{ dx: number; dy: number; r: number }>; }
 interface Particle { id: string; x: number; y: number; vx: number; vy: number; life: number; maxLife: number; color: string; size: number; }
 
-// Polyfill roundRect for browsers that don't support it
 function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   if (w < 2 * r) r = w / 2;
   if (h < 2 * r) r = h / 2;
@@ -23,6 +22,7 @@ function rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
 const WEAPON_COLORS: Record<string, string> = {
   pistol: "#FFD60A", shotgun: "#FF9F0A", sniper: "#30D158",
   uzi: "#007AFF", minigun: "#FF375F", bazooka: "#FF6B35",
+  flamethrower: "#FF6600", grenadelauncher: "#8FCA5A", lasergun: "#FF00FF",
 };
 
 function idGen() { return Math.random().toString(36).substr(2, 9); }
@@ -31,7 +31,6 @@ function drawCrackedGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
   ctx.fillStyle = "#0D0D0D";
   ctx.fillRect(0, 0, w, h);
 
-  // Dirt patches
   const patches = [
     [w * 0.15, h * 0.2, 120, 90], [w * 0.7, h * 0.15, 100, 75],
     [w * 0.45, h * 0.5, 180, 120], [w * 0.1, h * 0.7, 90, 65],
@@ -48,7 +47,6 @@ function drawCrackedGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
     ctx.fill();
   });
 
-  // Cracks
   ctx.strokeStyle = "rgba(0,0,0,0.7)";
   ctx.lineWidth = 1.5;
   const cracks = [
@@ -65,7 +63,6 @@ function drawCrackedGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
     ctx.beginPath();
     pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
     ctx.stroke();
-    // Sub-crack
     if (pts.length > 1) {
       const mid = pts[Math.floor(pts.length / 2)];
       ctx.beginPath();
@@ -79,11 +76,10 @@ function drawCrackedGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
     }
   });
 
-  // Rubble/debris
   const rubble = [
-    [w*0.22,h*0.18,8,5], [w*0.68,h*0.12,6,4], [w*0.85,h*0.35,9,5],
-    [w*0.15,h*0.65,7,4], [w*0.75,h*0.75,8,5], [w*0.42,h*0.28,5,3],
-    [w*0.55,h*0.72,6,4], [w*0.33,h*0.88,7,4],
+    [w*0.22,h*0.18,8,5],[w*0.68,h*0.12,6,4],[w*0.85,h*0.35,9,5],
+    [w*0.15,h*0.65,7,4],[w*0.75,h*0.75,8,5],[w*0.42,h*0.28,5,3],
+    [w*0.55,h*0.72,6,4],[w*0.33,h*0.88,7,4],
   ];
   rubble.forEach(([rx, ry, rw, rh]) => {
     ctx.fillStyle = "#1A1A1A";
@@ -99,41 +95,31 @@ function drawCrackedGround(ctx: CanvasRenderingContext2D, w: number, h: number) 
 
 function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, angle: number, time: number) {
   const walkAnim = Math.sin(time * 0.008) * 3;
-
   ctx.save();
   ctx.translate(x, y);
 
-  // Shadow
   ctx.fillStyle = "rgba(0,0,0,0.35)";
-  ctx.beginPath();
-  ctx.ellipse(1, 15, 13, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.beginPath(); ctx.ellipse(1, 15, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
 
-  // Body
   ctx.fillStyle = "#1E3A5F";
   rr(ctx, -10, -4, 20, 14, 4); ctx.fill();
 
-  // Chest stripe
   ctx.fillStyle = "rgba(0,180,255,0.5)";
   ctx.fillRect(-6, -1, 12, 3);
 
-  // Core glow
   ctx.fillStyle = "#00D4FF";
   ctx.beginPath(); ctx.arc(0, 4, 3, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = "#fff";
   ctx.beginPath(); ctx.arc(0, 4, 1.5, 0, Math.PI * 2); ctx.fill();
 
-  // Legs with walk animation
   ctx.fillStyle = "#0F2840";
   const legOffset = walkAnim;
   rr(ctx, -8, 8 + legOffset, 6, 10, 3); ctx.fill();
   rr(ctx, 2, 8 - legOffset, 6, 10, 3); ctx.fill();
 
-  // Left arm
   ctx.fillStyle = "#1A3A5C";
   rr(ctx, -15, -2, 6, 9, 3); ctx.fill();
 
-  // Right arm + weapon (rotated)
   ctx.save();
   ctx.rotate(angle);
   ctx.fillStyle = "#1A3A5C";
@@ -144,21 +130,17 @@ function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, angle: 
   rr(ctx, 24, -1, 7, 2, 1); ctx.fill();
   ctx.restore();
 
-  // Head
   ctx.fillStyle = "#1E3A5F";
   rr(ctx, -9, -18, 18, 16, 5); ctx.fill();
 
-  // Helmet top
   ctx.fillStyle = "#2A70D6";
   rr(ctx, -4, -21, 8, 5, 2); ctx.fill();
 
-  // Visor
   ctx.fillStyle = "#001530";
   rr(ctx, -7, -16, 14, 7, 3); ctx.fill();
   ctx.fillStyle = "rgba(0,170,255,0.4)";
   rr(ctx, -6, -15, 12, 5, 2.5); ctx.fill();
 
-  // Eyes
   ctx.fillStyle = "#00EEFF";
   ctx.beginPath(); ctx.arc(-3, -12, 2.2, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(3, -12, 2.2, 0, Math.PI * 2); ctx.fill();
@@ -169,7 +151,14 @@ function drawPlayer(ctx: CanvasRenderingContext2D, x: number, y: number, angle: 
   ctx.restore();
 }
 
-function drawZombie(ctx: CanvasRenderingContext2D, x: number, y: number, hp: number, maxHp: number, isDead: boolean, time: number, walkPhase: number) {
+function drawZombie(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  hp: number, maxHp: number,
+  isDead: boolean, time: number, walkPhase: number,
+  isSprinter: boolean,
+  burning: boolean,
+) {
   ctx.save();
   ctx.translate(x, y);
 
@@ -184,42 +173,56 @@ function drawZombie(ctx: CanvasRenderingContext2D, x: number, y: number, hp: num
   }
 
   const hpPct = hp / maxHp;
-  const walkAnim = Math.sin(time * 0.006 + walkPhase) * 4;
-  const bodyR = Math.floor(60 + (1 - hpPct) * 110);
-  const bodyG = Math.floor(110 * hpPct);
-  const bodyB = Math.floor(20 * hpPct);
+  const walkAnim = isSprinter
+    ? Math.sin(time * 0.014 + walkPhase) * 6
+    : Math.sin(time * 0.006 + walkPhase) * 4;
+
+  // Sprinters: orange-red tinted, slightly smaller / more hunched
+  const bodyR = isSprinter
+    ? Math.floor(180 + (1 - hpPct) * 60)
+    : Math.floor(60 + (1 - hpPct) * 110);
+  const bodyG = isSprinter ? Math.floor(50 * hpPct) : Math.floor(110 * hpPct);
+  const bodyB = 20;
   const bodyColor = `rgb(${bodyR},${bodyG},${bodyB})`;
-  const darkBody = `rgb(${Math.floor(bodyR * 0.55)},${Math.floor(bodyG * 0.55)},${Math.floor(bodyB * 0.55)})`;
+  const darkBody = `rgb(${Math.floor(bodyR * 0.55)},${Math.floor(bodyG * 0.55)},${bodyB})`;
 
-  // Shadow
+  // Burn aura
+  if (burning) {
+    ctx.shadowColor = "#FF6600";
+    ctx.shadowBlur = 14;
+    const burnG = ctx.createRadialGradient(0, 0, 4, 0, 0, 20);
+    burnG.addColorStop(0, "rgba(255,100,0,0.3)");
+    burnG.addColorStop(1, "rgba(255,60,0,0)");
+    ctx.fillStyle = burnG;
+    ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
   ctx.fillStyle = "rgba(0,0,0,0.3)";
-  ctx.beginPath(); ctx.ellipse(1, 13, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(1, 13, isSprinter ? 9 : 11, 4, 0, 0, Math.PI * 2); ctx.fill();
 
-  // Legs
   ctx.fillStyle = darkBody;
   ctx.save(); ctx.rotate(-0.14);
-  rr(ctx, -7, 8 + walkAnim, 5, 9, 2); ctx.fill();
+  rr(ctx, -7, 8 + walkAnim, 5, isSprinter ? 7 : 9, 2); ctx.fill();
   ctx.restore();
   ctx.save(); ctx.rotate(0.14);
-  rr(ctx, 2, 8 - walkAnim, 5, 9, 2); ctx.fill();
+  rr(ctx, 2, 8 - walkAnim, 5, isSprinter ? 7 : 9, 2); ctx.fill();
   ctx.restore();
 
-  // Body
+  const scale = isSprinter ? 0.88 : 1;
+  ctx.save(); ctx.scale(scale, scale);
   ctx.fillStyle = bodyColor;
   rr(ctx, -9, -4, 18, 13, 3); ctx.fill();
 
-  // Body damage lines
   ctx.strokeStyle = "rgba(0,0,0,0.5)";
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(-4, -2); ctx.lineTo(-1, 3); ctx.lineTo(2, 1); ctx.stroke();
 
-  // Corrupt core
   ctx.fillStyle = "#8B0000";
   ctx.beginPath(); ctx.arc(0, 3, 3, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "rgba(255,0,0,0.7)";
+  ctx.fillStyle = isSprinter ? "rgba(255,80,0,0.9)" : "rgba(255,0,0,0.7)";
   ctx.beginPath(); ctx.arc(0, 3, 1.5, 0, Math.PI * 2); ctx.fill();
 
-  // Arms outstretched (lurching)
   ctx.fillStyle = bodyColor;
   const lurch = Math.sin(time * 0.004 + walkPhase) * 0.2;
   ctx.save(); ctx.rotate(-0.26 + lurch);
@@ -229,24 +232,22 @@ function drawZombie(ctx: CanvasRenderingContext2D, x: number, y: number, hp: num
   rr(ctx, 8, -5, 8, 5, 2); ctx.fill();
   ctx.restore();
 
-  // Head
   ctx.fillStyle = bodyColor;
   rr(ctx, -8, -17, 16, 14, 4); ctx.fill();
 
-  // Cracked visor
   ctx.fillStyle = "#1A0000";
   rr(ctx, -6, -15, 12, 6, 2); ctx.fill();
 
-  // Glowing red eyes
-  ctx.fillStyle = "#FF0000";
-  ctx.shadowColor = "#FF0000"; ctx.shadowBlur = 6;
+  const eyeColor = isSprinter ? "#FF6600" : "#FF0000";
+  ctx.fillStyle = eyeColor;
+  ctx.shadowColor = eyeColor; ctx.shadowBlur = isSprinter ? 10 : 6;
   ctx.beginPath(); ctx.arc(-3, -12, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(3, -12, 2.5, 0, Math.PI * 2); ctx.fill();
   ctx.shadowBlur = 0;
-
-  ctx.fillStyle = "#FF6060";
+  ctx.fillStyle = isSprinter ? "#FFAA00" : "#FF6060";
   ctx.beginPath(); ctx.arc(-3, -12, 1.2, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.arc(3, -12, 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 
   // HP bar
   ctx.fillStyle = "rgba(0,0,0,0.6)";
@@ -254,18 +255,29 @@ function drawZombie(ctx: CanvasRenderingContext2D, x: number, y: number, hp: num
   ctx.fillStyle = hpPct > 0.6 ? "#4CD964" : hpPct > 0.3 ? "#FFD60A" : "#FF3B30";
   if (24 * hpPct > 0) { rr(ctx, -12, -25, 24 * hpPct, 3, 1.5); ctx.fill(); }
 
+  // Sprinter indicator badge
+  if (isSprinter) {
+    ctx.fillStyle = "rgba(255,100,0,0.85)";
+    ctx.beginPath(); ctx.arc(12, -25, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 5px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("!", 12, -23);
+  }
+
   ctx.restore();
 }
 
-function drawFog(ctx: CanvasRenderingContext2D, w: number, h: number, time: number) {
+function drawFog(ctx: CanvasRenderingContext2D, w: number, h: number, time: number, intensity: number) {
   const wisps = [
-    { x: 0.1, y: 0.3, sx: 0.8, sy: 0.3, spd: 0.00012, phase: 0 },
-    { x: 0.5, y: 0.1, sx: 0.6, sy: 0.2, spd: 0.00009, phase: 1.2 },
-    { x: 0.8, y: 0.5, sx: 0.7, sy: 0.25, spd: 0.00014, phase: 2.4 },
-    { x: 0.2, y: 0.7, sx: 0.5, sy: 0.2, spd: 0.0001, phase: 0.7 },
-    { x: 0.6, y: 0.85, sx: 0.65, sy: 0.22, spd: 0.00011, phase: 1.8 },
-    { x: 0.05, y: 0.55, sx: 0.4, sy: 0.18, spd: 0.00013, phase: 3.1 },
-    { x: 0.9, y: 0.25, sx: 0.45, sy: 0.19, spd: 0.0001, phase: 0.4 },
+    { x: 0.1, y: 0.3, sx: 0.85, sy: 0.3, spd: 0.00012, phase: 0 },
+    { x: 0.5, y: 0.1, sx: 0.65, sy: 0.22, spd: 0.00009, phase: 1.2 },
+    { x: 0.8, y: 0.5, sx: 0.75, sy: 0.27, spd: 0.00014, phase: 2.4 },
+    { x: 0.2, y: 0.7, sx: 0.55, sy: 0.22, spd: 0.0001, phase: 0.7 },
+    { x: 0.6, y: 0.85, sx: 0.7, sy: 0.24, spd: 0.00011, phase: 1.8 },
+    { x: 0.05, y: 0.55, sx: 0.45, sy: 0.2, spd: 0.00013, phase: 3.1 },
+    { x: 0.9, y: 0.25, sx: 0.5, sy: 0.21, spd: 0.0001, phase: 0.4 },
+    { x: 0.35, y: 0.45, sx: 0.55, sy: 0.18, spd: 0.00015, phase: 1.1 },
   ];
 
   ctx.globalCompositeOperation = "source-over";
@@ -276,7 +288,8 @@ function drawFog(ctx: CanvasRenderingContext2D, w: number, h: number, time: numb
     const cy = (wisp.y + oy) * h;
     const rx = wisp.sx * w * (0.9 + Math.sin(time * 0.0002 + wisp.phase) * 0.1);
     const ry = wisp.sy * h * (0.9 + Math.cos(time * 0.00017 + wisp.phase) * 0.1);
-    const alpha = 0.06 + Math.sin(time * 0.0003 + wisp.phase) * 0.025;
+    const baseAlpha = 0.07 + Math.sin(time * 0.0003 + wisp.phase) * 0.03;
+    const alpha = baseAlpha * intensity;
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
     g.addColorStop(0, `rgba(200,180,160,${alpha})`);
     g.addColorStop(0.5, `rgba(180,160,140,${alpha * 0.5})`);
@@ -289,7 +302,6 @@ function drawFog(ctx: CanvasRenderingContext2D, w: number, h: number, time: numb
 }
 
 function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  // Dark edges
   const gTop = ctx.createLinearGradient(0, 0, 0, h * 0.25);
   gTop.addColorStop(0, "rgba(0,0,0,0.7)"); gTop.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = gTop; ctx.fillRect(0, 0, w, h * 0.25);
@@ -306,12 +318,24 @@ function drawVignette(ctx: CanvasRenderingContext2D, w: number, h: number) {
   gRight.addColorStop(0, "rgba(0,0,0,0)"); gRight.addColorStop(1, "rgba(0,0,0,0.5)");
   ctx.fillStyle = gRight; ctx.fillRect(w * 0.8, 0, w * 0.2, h);
 
-  // Red atmospheric tint
   const redG = ctx.createRadialGradient(w * 0.5, h * 0.5, h * 0.15, w * 0.5, h * 0.5, h * 0.9);
   redG.addColorStop(0, "rgba(80,0,0,0)");
   redG.addColorStop(0.6, "rgba(80,0,0,0.08)");
   redG.addColorStop(1, "rgba(120,0,0,0.25)");
   ctx.fillStyle = redG;
+  ctx.fillRect(0, 0, w, h);
+}
+
+function drawLowHpVignette(ctx: CanvasRenderingContext2D, w: number, h: number, hpPct: number, time: number) {
+  const intensity = (1 - hpPct / 0.3);
+  const pulse = 0.5 + Math.sin(time * 0.004) * 0.5;
+  const alpha = Math.min(0.65, intensity * 0.55 * (0.7 + pulse * 0.3));
+
+  const g = ctx.createRadialGradient(w / 2, h / 2, h * 0.15, w / 2, h / 2, h * 0.9);
+  g.addColorStop(0, "rgba(180,0,0,0)");
+  g.addColorStop(0.5, `rgba(180,0,0,${alpha * 0.4})`);
+  g.addColorStop(1, `rgba(220,0,0,${alpha})`);
+  ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 }
 
@@ -322,7 +346,6 @@ export function GameCanvasHTML({ state }: Props) {
   const rafRef = useRef(0);
   const timeRef = useRef(Date.now());
 
-  // Visual effect state
   const bloodSplattersRef = useRef<BloodSplatter[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const prevKillsRef = useRef(state.kills);
@@ -331,44 +354,40 @@ export function GameCanvasHTML({ state }: Props) {
   const shakeRef = useRef(0);
   const damageFlashRef = useRef(0);
   const stateRef = useRef(state);
-  const muzzleFlashRef = useRef({ active: false, x: 0, y: 0, angle: 0, timer: 0 });
+  const muzzleFlashRef = useRef({ active: false, x: 0, y: 0, angle: 0, timer: 0, weaponId: "pistol" as string });
 
   stateRef.current = state;
 
-  // Detect events from state changes
   useEffect(() => {
     const s = stateRef.current;
 
-    // Damage event
     if (s.playerHp < prevHpRef.current) {
-      shakeRef.current = 10;
-      damageFlashRef.current = 0.55;
+      const damageAmount = prevHpRef.current - s.playerHp;
+      shakeRef.current = Math.min(18, 8 + damageAmount * 0.4);
+      damageFlashRef.current = Math.min(0.7, 0.4 + damageAmount * 0.02);
     }
     prevHpRef.current = s.playerHp;
 
-    // Kill events → blood splatters + particles
     if (s.kills > prevKillsRef.current) {
       s.recentKills.forEach(kill => {
         if (Date.now() - kill.time < 200) {
           bloodSplattersRef.current.push({
-            id: kill.id,
-            x: kill.x, y: kill.y,
-            r: 18 + Math.random() * 14,
-            alpha: 0.85,
-            drops: Array.from({ length: 8 }, () => ({
-              dx: (Math.random() - 0.5) * 40,
-              dy: (Math.random() - 0.5) * 40,
-              r: 3 + Math.random() * 7,
+            id: kill.id, x: kill.x, y: kill.y,
+            r: 18 + Math.random() * 18,
+            alpha: 0.9,
+            drops: Array.from({ length: 10 }, () => ({
+              dx: (Math.random() - 0.5) * 50,
+              dy: (Math.random() - 0.5) * 50,
+              r: 3 + Math.random() * 8,
             })),
           });
-          // Explosion particles for zombie death
-          for (let i = 0; i < 12; i++) {
-            const angle = (i / 12) * Math.PI * 2;
-            const speed = 2 + Math.random() * 4;
+          for (let i = 0; i < 14; i++) {
+            const angle = (i / 14) * Math.PI * 2;
+            const speed = 2 + Math.random() * 5;
             particlesRef.current.push({
               id: idGen(), x: kill.x, y: kill.y,
               vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-              life: 1, maxLife: 1, color: "#8B0000", size: 3 + Math.random() * 4,
+              life: 1, maxLife: 1, color: "#8B0000", size: 3 + Math.random() * 5,
             });
           }
         }
@@ -376,31 +395,30 @@ export function GameCanvasHTML({ state }: Props) {
       prevKillsRef.current = s.kills;
     }
 
-    // Muzzle flash
     if (s.bullets.length > prevBulletCountRef.current) {
       muzzleFlashRef.current = {
         active: true,
         x: s.lastShotX, y: s.lastShotY,
         angle: s.lastShotAngle,
-        timer: 80,
+        timer: s.currentWeapon === "flamethrower" ? 40 : 80,
+        weaponId: s.currentWeapon,
       };
     }
     prevBulletCountRef.current = s.bullets.length;
   }, [state]);
 
-  // Explosion particles
   useEffect(() => {
     state.explosions.forEach(exp => {
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 24; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 3 + Math.random() * 6;
-        const colors = ["#FFDD44", "#FF6B35", "#FF3B30", "#FF9900"];
+        const speed = 3 + Math.random() * 7;
+        const colors = ["#FFDD44", "#FF6B35", "#FF3B30", "#FF9900", "#FF5500"];
         particlesRef.current.push({
           id: idGen(), x: exp.x, y: exp.y,
           vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
           life: 1, maxLife: 1,
           color: colors[Math.floor(Math.random() * colors.length)],
-          size: 4 + Math.random() * 8,
+          size: 4 + Math.random() * 9,
         });
       }
     });
@@ -417,7 +435,6 @@ export function GameCanvasHTML({ state }: Props) {
     const now = Date.now();
     const elapsed = now - timeRef.current;
 
-    // Draw static background once
     if (!bgDrawnRef.current) {
       const bgCtx = bgCanvas.getContext("2d");
       if (bgCtx) {
@@ -427,25 +444,22 @@ export function GameCanvasHTML({ state }: Props) {
       }
     }
 
-    // Screen shake
     let shakeX = 0, shakeY = 0;
     if (shakeRef.current > 0) {
-      shakeRef.current = Math.max(0, shakeRef.current - 0.4);
+      shakeRef.current = Math.max(0, shakeRef.current - 0.35);
       const intensity = shakeRef.current;
-      shakeX = (Math.random() - 0.5) * intensity * 1.5;
-      shakeY = (Math.random() - 0.5) * intensity * 1.5;
+      shakeX = (Math.random() - 0.5) * intensity * 2;
+      shakeY = (Math.random() - 0.5) * intensity * 2;
     }
 
     ctx.clearRect(0, 0, w, h);
     ctx.save();
     ctx.translate(shakeX, shakeY);
 
-    // Draw background
     ctx.drawImage(bgCanvas, 0, 0, w, h);
 
-    // Blood splatters (static, behind everything)
     bloodSplattersRef.current.forEach(sp => {
-      ctx.fillStyle = `rgba(120,0,0,${sp.alpha * 0.6})`;
+      ctx.fillStyle = `rgba(120,0,0,${sp.alpha * 0.65})`;
       ctx.beginPath(); ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2); ctx.fill();
       sp.drops.forEach(d => {
         ctx.fillStyle = `rgba(100,0,0,${sp.alpha * 0.5})`;
@@ -453,11 +467,12 @@ export function GameCanvasHTML({ state }: Props) {
       });
     });
 
-    // Fog layer
-    drawFog(ctx, w, h, elapsed);
+    // Fog (more dense when hordeActive)
+    const s = stateRef.current;
+    const fogIntensity = s.hordeActive ? 2.0 : 1.0;
+    drawFog(ctx, w, h, elapsed, fogIntensity);
 
     // Explosions
-    const s = stateRef.current;
     s.explosions.forEach(exp => {
       const age = (Date.now() - exp.createdAt) / 500;
       const r = exp.radius * (0.5 + age * 0.8);
@@ -469,7 +484,6 @@ export function GameCanvasHTML({ state }: Props) {
       g.addColorStop(1, "rgba(255,0,0,0)");
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(exp.x, exp.y, r, 0, Math.PI * 2); ctx.fill();
-      // Smoke ring
       ctx.strokeStyle = `rgba(60,40,20,${alpha * 0.4})`;
       ctx.lineWidth = 8;
       ctx.beginPath(); ctx.arc(exp.x, exp.y, r * 0.8, 0, Math.PI * 2); ctx.stroke();
@@ -478,22 +492,55 @@ export function GameCanvasHTML({ state }: Props) {
     // Bullets
     s.bullets.forEach(b => {
       const col = WEAPON_COLORS[b.weaponId] ?? "#FFD60A";
-      if (b.isExplosive) {
-        ctx.fillStyle = "rgba(255,107,53,0.5)";
+
+      if (b.weaponId === "lasergun") {
+        // Laser beam: bright magenta line with glow
+        const trailLen = 55;
+        ctx.save();
+        ctx.shadowColor = "#FF00FF"; ctx.shadowBlur = 16;
+        ctx.strokeStyle = "#FF88FF";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y);
+        ctx.lineTo(b.x - b.vx * trailLen / 27, b.y - b.vy * trailLen / 27);
+        ctx.stroke();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#FF00FF";
+        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(b.x, b.y, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else if (b.weaponId === "flamethrower") {
+        // Flame particle blob
+        const flameColors = ["#FF6600", "#FF9900", "#FF3300", "#FFAA00"];
+        const fc = flameColors[Math.floor(Math.random() * flameColors.length)];
+        ctx.save();
+        ctx.shadowColor = "#FF6600"; ctx.shadowBlur = 10;
+        ctx.globalAlpha = 0.8;
+        ctx.fillStyle = fc;
+        ctx.beginPath(); ctx.arc(b.x, b.y, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#FFDD44";
+        ctx.beginPath(); ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      } else if (b.isExplosive) {
+        ctx.fillStyle = b.weaponId === "grenadelauncher" ? "rgba(80,160,50,0.5)" : "rgba(255,107,53,0.5)";
         ctx.beginPath(); ctx.arc(b.x, b.y, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#FFD700";
+        ctx.fillStyle = b.weaponId === "grenadelauncher" ? "#A0E060" : "#FFD700";
         ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "#fff";
         ctx.beginPath(); ctx.arc(b.x, b.y, 2.5, 0, Math.PI * 2); ctx.fill();
       } else {
-        // Trail
         ctx.strokeStyle = col + "44";
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(b.x, b.y);
         ctx.lineTo(b.x - b.vx * 2.5, b.y - b.vy * 2.5);
         ctx.stroke();
-        // Core
         ctx.shadowColor = col; ctx.shadowBlur = 8;
         ctx.fillStyle = col;
         ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI * 2); ctx.fill();
@@ -503,9 +550,11 @@ export function GameCanvasHTML({ state }: Props) {
       }
     });
 
-    // Zombies (behind player)
+    // Zombies
+    const nowTs = Date.now();
     s.zombies.forEach(z => {
-      drawZombie(ctx, z.x, z.y, z.hp, z.maxHp, z.isDead, elapsed, z.walkPhase);
+      const burning = !!(z.burnUntil && nowTs < z.burnUntil);
+      drawZombie(ctx, z.x, z.y, z.hp, z.maxHp, z.isDead, elapsed, z.walkPhase, !!z.isSprinter, burning);
     });
 
     // Player
@@ -518,16 +567,17 @@ export function GameCanvasHTML({ state }: Props) {
       if (mf.timer <= 0) { mf.active = false; }
       else {
         const alpha = mf.timer / 80;
+        const flashColor = mf.weaponId === "flamethrower" ? "rgba(255,120,0," : mf.weaponId === "lasergun" ? "rgba(255,0,255," : "rgba(255,255,200,";
         ctx.save();
         ctx.translate(mf.x, mf.y);
         ctx.rotate(mf.angle);
-        const muzzleGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 22);
-        muzzleGrad.addColorStop(0, `rgba(255,255,200,${alpha})`);
-        muzzleGrad.addColorStop(0.4, `rgba(255,180,50,${alpha * 0.7})`);
+        const muzzleGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, mf.weaponId === "flamethrower" ? 30 : 22);
+        muzzleGrad.addColorStop(0, `${flashColor}${alpha})`);
+        muzzleGrad.addColorStop(0.4, `${flashColor}${alpha * 0.7})`);
         muzzleGrad.addColorStop(1, "rgba(255,100,0,0)");
         ctx.fillStyle = muzzleGrad;
         ctx.beginPath();
-        ctx.ellipse(8, 0, 22, 9, 0, 0, Math.PI * 2);
+        ctx.ellipse(8, 0, mf.weaponId === "flamethrower" ? 30 : 22, 9, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
@@ -547,14 +597,20 @@ export function GameCanvasHTML({ state }: Props) {
       ctx.globalAlpha = 1;
     });
 
-    // Vignette + atmosphere
+    // Dark vignette
     drawVignette(ctx, w, h);
+
+    // Red HP vignette (pulsing when low)
+    const hpPct = s.playerHp / s.maxHp;
+    if (hpPct < 0.3 && !s.gameOver) {
+      drawLowHpVignette(ctx, w, h, hpPct, elapsed);
+    }
 
     // Damage flash
     if (damageFlashRef.current > 0) {
       ctx.fillStyle = `rgba(200,0,0,${damageFlashRef.current})`;
       ctx.fillRect(0, 0, w, h);
-      damageFlashRef.current = Math.max(0, damageFlashRef.current - 0.025);
+      damageFlashRef.current = Math.max(0, damageFlashRef.current - 0.022);
     }
 
     ctx.restore();
@@ -570,10 +626,7 @@ export function GameCanvasHTML({ state }: Props) {
 
   return (
     <View style={styles.container} pointerEvents="none">
-      <canvas
-        ref={bgCanvasRef as any}
-        style={{ display: "none" }}
-      />
+      <canvas ref={bgCanvasRef as any} style={{ display: "none" }} />
       <canvas
         ref={canvasRef as any}
         width={typeof window !== "undefined" ? window.innerWidth : 390}

@@ -16,7 +16,10 @@ export type WeaponId =
   | "sniper"
   | "uzi"
   | "minigun"
-  | "bazooka";
+  | "bazooka"
+  | "flamethrower"
+  | "grenadelauncher"
+  | "lasergun";
 
 export interface Weapon {
   id: WeaponId;
@@ -30,6 +33,9 @@ export interface Weapon {
   bulletColor: string;
   spread: number;
   bulletsPerShot: number;
+  isFlame?: boolean;
+  isBeam?: boolean;
+  explosionRadius?: number;
 }
 
 export const WEAPONS: Record<WeaponId, Weapon> = {
@@ -53,7 +59,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
     fireRate: 900,
     ammoCapacity: 30,
     range: 180,
-    unlockCost: 80,
+    unlockCost: 150,
     description: "Devastating at close range. Fires spread pellets.",
     bulletColor: "#FF9F0A",
     spread: 30,
@@ -66,7 +72,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
     fireRate: 1500,
     ammoCapacity: 25,
     range: 500,
-    unlockCost: 150,
+    unlockCost: 300,
     description: "One-shot kills from extreme range.",
     bulletColor: "#30D158",
     spread: 0,
@@ -79,7 +85,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
     fireRate: 100,
     ammoCapacity: 120,
     range: 200,
-    unlockCost: 200,
+    unlockCost: 500,
     description: "High fire rate submachine gun.",
     bulletColor: "#007AFF",
     spread: 10,
@@ -92,7 +98,7 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
     fireRate: 60,
     ammoCapacity: 400,
     range: 220,
-    unlockCost: 400,
+    unlockCost: 800,
     description: "Insane fire rate. Mow down hordes.",
     bulletColor: "#FF375F",
     spread: 15,
@@ -105,15 +111,59 @@ export const WEAPONS: Record<WeaponId, Weapon> = {
     fireRate: 2500,
     ammoCapacity: 18,
     range: 350,
-    unlockCost: 600,
+    unlockCost: 1200,
     description: "Explosive splash damage. Kills groups.",
     bulletColor: "#FF6B35",
     spread: 0,
     bulletsPerShot: 1,
+    explosionRadius: 80,
+  },
+  flamethrower: {
+    id: "flamethrower",
+    name: "Flamethrwr",
+    damage: 9,
+    fireRate: 45,
+    ammoCapacity: 200,
+    range: 130,
+    unlockCost: 1600,
+    description: "Continuous close-range fire. Burns zombies over time.",
+    bulletColor: "#FF6600",
+    spread: 20,
+    bulletsPerShot: 3,
+    isFlame: true,
+  },
+  grenadelauncher: {
+    id: "grenadelauncher",
+    name: "Grenade Lnch",
+    damage: 180,
+    fireRate: 1800,
+    ammoCapacity: 20,
+    range: 290,
+    unlockCost: 2200,
+    description: "Bouncing grenades with massive splash damage.",
+    bulletColor: "#8FCA5A",
+    spread: 0,
+    bulletsPerShot: 1,
+    explosionRadius: 130,
+  },
+  lasergun: {
+    id: "lasergun",
+    name: "Laser Gun",
+    damage: 350,
+    fireRate: 3500,
+    ammoCapacity: 12,
+    range: 700,
+    unlockCost: 3000,
+    description: "Instant beam. Extreme damage, very slow fire rate.",
+    bulletColor: "#FF00FF",
+    spread: 0,
+    bulletsPerShot: 1,
+    isBeam: true,
   },
 };
 
 export const MAX_LEVELS = 50;
+export const HORDE_LEVELS = [10, 20, 30, 40, 50];
 
 export interface PlayerStats {
   diamonds: number;
@@ -124,6 +174,7 @@ export interface PlayerStats {
   totalKills: number;
   gamesPlayed: number;
   killStreakBonusTotal: number;
+  endlessBestScore: number;
 }
 
 export interface GameContextValue {
@@ -133,6 +184,7 @@ export interface GameContextValue {
   unlockWeapon: (weaponId: WeaponId) => boolean;
   selectWeapon: (weaponId: WeaponId) => void;
   completeLevel: (level: number, kills: number, streakBonus: number) => number;
+  saveEndlessScore: (score: number) => void;
   isLoaded: boolean;
 }
 
@@ -145,6 +197,7 @@ const DEFAULT_STATS: PlayerStats = {
   totalKills: 0,
   gamesPlayed: 0,
   killStreakBonusTotal: 0,
+  endlessBestScore: 0,
 };
 
 const DEVICE_ID_KEY = "zombie_device_id";
@@ -163,7 +216,6 @@ function getOrCreateDeviceId(): string {
 }
 
 function getDiamondReward(level: number): number {
-  // Level 1 → 30, Level 50 → 80, linear scale
   return Math.round(30 + (level - 1) * (50 / 49));
 }
 
@@ -263,7 +315,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [updateStats]
   );
 
-  // Returns total diamond reward (base + streak bonus)
   const completeLevel = useCallback(
     (level: number, kills: number, streakBonus: number): number => {
       const baseDiamonds = getDiamondReward(level);
@@ -282,6 +333,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [updateStats]
   );
 
+  const saveEndlessScore = useCallback(
+    (score: number) => {
+      updateStats((prev) => ({
+        ...prev,
+        endlessBestScore: Math.max(prev.endlessBestScore, score),
+        gamesPlayed: prev.gamesPlayed + 1,
+      }));
+    },
+    [updateStats]
+  );
+
   const value = useMemo<GameContextValue>(
     () => ({
       playerStats,
@@ -290,6 +352,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       unlockWeapon,
       selectWeapon,
       completeLevel,
+      saveEndlessScore,
       isLoaded,
     }),
     [
@@ -299,6 +362,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       unlockWeapon,
       selectWeapon,
       completeLevel,
+      saveEndlessScore,
       isLoaded,
     ]
   );

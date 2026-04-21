@@ -5,7 +5,7 @@ import React, {
   useRef,
 } from "react";
 import { Dimensions } from "react-native";
-import { WeaponId, WEAPONS } from "@/context/GameContext";
+import { WeaponId, WEAPONS, HORDE_LEVELS } from "@/context/GameContext";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 export const GAME_W = SCREEN_W;
@@ -14,7 +14,6 @@ export const GAME_H = SCREEN_H;
 const PLAYER_RADIUS = 16;
 const ZOMBIE_RADIUS = 14;
 const BULLET_RADIUS = 5;
-const EXPLOSION_RADIUS = 80;
 const PLAYER_SPEED = 3.5;
 const ZOMBIE_BASE_SPEED = 1.1;
 const STAMINA_MAX = 100;
@@ -22,8 +21,15 @@ const STAMINA_DRAIN = 1.5;
 const STAMINA_REGEN = 1.2;
 const STAMINA_RECOVER_DELAY = 8000;
 const KILL_STREAK_COUNT = 5;
-const KILL_STREAK_WINDOW = 8000; // ms
+const KILL_STREAK_WINDOW = 8000;
 const KILL_STREAK_BONUS = 10;
+const BURN_DURATION = 3000;
+const BURN_DPS = 12;
+const SPRINTER_SPEED_MULT = 2.6;
+const SPRINTER_HP_MULT = 0.55;
+const SPRINTER_CHANCE_FROM_LEVEL = 5;
+const HORDE_EXTRA_COUNT = 14;
+const DEFAULT_EXPLOSION_RADIUS = 80;
 
 export interface Position { x: number; y: number; }
 
@@ -32,6 +38,7 @@ export interface Bullet {
   vx: number; vy: number; damage: number;
   range: number; distanceTraveled: number;
   weaponId: WeaponId; isExplosive: boolean;
+  explosionRadius?: number;
 }
 
 export interface Zombie {
@@ -39,6 +46,8 @@ export interface Zombie {
   hp: number; maxHp: number; speed: number;
   isDead: boolean; deathTime?: number;
   walkPhase: number;
+  isSprinter?: boolean;
+  burnUntil?: number;
 }
 
 export interface Explosion {
@@ -72,6 +81,9 @@ export interface GameState {
   lastShotY: number;
   recentKills: RecentKill[];
   killStreakBonus: number;
+  isEndless: boolean;
+  endlessRound: number;
+  hordeActive: boolean;
 }
 
 export interface GameEngineHandle {
@@ -81,24 +93,29 @@ export interface GameEngineHandle {
   movePlayer: (dx: number, dy: number, sprinting: boolean) => void;
   reload: () => void;
   setWeapon: (weaponId: WeaponId) => void;
-  startGame: (level: number, weapon: WeaponId) => void;
+  startGame: (level: number, weapon: WeaponId, endless?: boolean) => void;
   pauseGame: () => void;
   resumeGame: () => void;
 }
 
-function getLevelConfig(level: number) {
-  // Smooth difficulty curve: level 1 easy, level 50 very challenging
-  const t = 1 + (level - 1) * 0.08;
-  const waveBase = [4, 7, 10];
+function getLevelConfig(level: number, isEndless: boolean, endlessRound: number) {
+  const effectiveLevel = isEndless ? MAX_ENDLESS_LEVEL + endlessRound * 3 : level;
+  const t = 1 + (effectiveLevel - 1) * 0.08;
+  const waveBase = isEndless ? [8, 12, 18] : [4, 7, 10];
   return {
     toughMult: t,
     waveSizes: waveBase.map(b => Math.floor(b * t)),
     totalWaves: 3,
     zombieHp: Math.floor(50 * t),
-    zombieSpeed: ZOMBIE_BASE_SPEED * (1 + (level - 1) * 0.04),
+    zombieSpeed: ZOMBIE_BASE_SPEED * (1 + (effectiveLevel - 1) * 0.04),
     zombieDamage: Math.floor(8 * t),
+    sprinterChance: effectiveLevel >= SPRINTER_CHANCE_FROM_LEVEL
+      ? Math.min(0.45, 0.15 + (effectiveLevel - SPRINTER_CHANCE_FROM_LEVEL) * 0.015)
+      : 0,
   };
 }
+
+const MAX_ENDLESS_LEVEL = 50;
 
 function spawnZombies(count: number, cfg: ReturnType<typeof getLevelConfig>): Zombie[] {
   return Array.from({ length: count }, (_, i) => {
@@ -108,12 +125,21 @@ function spawnZombies(count: number, cfg: ReturnType<typeof getLevelConfig>): Zo
     else if (side === 1) { x = GAME_W + 50; y = Math.random() * GAME_H; }
     else if (side === 2) { x = Math.random() * GAME_W; y = GAME_H + 50; }
     else { x = -50; y = Math.random() * GAME_H; }
+
+    const isSprinter = Math.random() < cfg.sprinterChance;
+    const hp = isSprinter
+      ? Math.floor(cfg.zombieHp * SPRINTER_HP_MULT)
+      : cfg.zombieHp;
+    const speed = isSprinter
+      ? (cfg.zombieSpeed + (Math.random() - 0.5) * 0.3) * SPRINTER_SPEED_MULT
+      : cfg.zombieSpeed + (Math.random() - 0.5) * 0.4;
+
     return {
       id: `z-${Date.now()}-${i}-${Math.random()}`,
-      x, y,
-      hp: cfg.zombieHp, maxHp: cfg.zombieHp,
-      speed: cfg.zombieSpeed + (Math.random() - 0.5) * 0.4,
-      isDead: false, walkPhase: Math.random() * Math.PI * 2,
+      x, y, hp, maxHp: hp,
+      speed, isDead: false,
+      walkPhase: Math.random() * Math.PI * 2,
+      isSprinter,
     };
   });
 }
@@ -124,10 +150,11 @@ export const GameEngine = React.forwardRef<
   GameEngineHandle,
   {
     onStateChange: (s: GameState) => void;
-    onGameEnd: (won: boolean, kills: number, streakBonus: number) => void;
+    onGameEnd: (won: boolean, kills: number, streakBonus: number, score: number) => void;
     onKillStreak?: (bonus: number) => void;
+    onHorde?: () => void;
   }
->(({ onStateChange, onGameEnd, onKillStreak }, ref) => {
+>(({ onStateChange, onGameEnd, onKillStreak, onHorde }, ref) => {
   const stateRef = useRef<GameState | null>(null);
   const lastTimeRef = useRef(0);
   const rafRef = useRef(0);
@@ -136,16 +163,18 @@ export const GameEngine = React.forwardRef<
   const isReloadingRef = useRef(false);
   const reloadStartRef = useRef(0);
   const staminaExhaustedTimeRef = useRef(0);
-  const configRef = useRef(getLevelConfig(1));
+  const configRef = useRef(getLevelConfig(1, false, 0));
   const killTimestampsRef = useRef<number[]>([]);
   const streakBonusRef = useRef(0);
+  const hordeFiredRef = useRef<Set<number>>(new Set());
 
-  const initState = useCallback((level: number, weapon: WeaponId): GameState => {
-    const cfg = getLevelConfig(level);
+  const initState = useCallback((level: number, weapon: WeaponId, endless = false): GameState => {
+    const cfg = getLevelConfig(level, endless, 0);
     configRef.current = cfg;
     const w = WEAPONS[weapon];
     killTimestampsRef.current = [];
     streakBonusRef.current = 0;
+    hordeFiredRef.current = new Set();
     return {
       player: { x: GAME_W / 2, y: GAME_H / 2, angle: 0 },
       playerHp: 100, maxHp: 100,
@@ -162,16 +191,17 @@ export const GameEngine = React.forwardRef<
       lastShotAngle: 0, lastShotX: 0, lastShotY: 0,
       recentKills: [],
       killStreakBonus: 0,
+      isEndless: endless,
+      endlessRound: 0,
+      hordeActive: false,
     };
   }, []);
 
   const recordKill = useCallback((ts: number) => {
     const now = ts;
     killTimestampsRef.current.push(now);
-    // Prune old kills outside the window
     killTimestampsRef.current = killTimestampsRef.current.filter(t => now - t < KILL_STREAK_WINDOW);
     if (killTimestampsRef.current.length >= KILL_STREAK_COUNT) {
-      // Award streak bonus, reset window
       killTimestampsRef.current = [];
       streakBonusRef.current += KILL_STREAK_BONUS;
       onKillStreak?.(KILL_STREAK_BONUS);
@@ -193,17 +223,52 @@ export const GameEngine = React.forwardRef<
     const cfg = configRef.current;
     const RELOAD_TIME = 1500;
 
-    // Wave spawn
+    // Wave spawn logic
     if (s.zombiesRemainingInWave === 0 && s.zombies.filter(z => !z.isDead).length === 0) {
       const nw = s.wave + 1;
+
       if (nw > cfg.totalWaves) {
+        // All waves done
+        if (s.isEndless) {
+          // Endless: start a new round with escalated difficulty
+          const newRound = s.endlessRound + 1;
+          const newCfg = getLevelConfig(s.level, true, newRound);
+          configRef.current = newCfg;
+          const sz = newCfg.waveSizes[0];
+          stateRef.current = {
+            ...s,
+            endlessRound: newRound,
+            wave: 1,
+            zombiesRemainingInWave: sz,
+            zombies: spawnZombies(sz, newCfg),
+            hordeActive: false,
+          };
+          onStateChange({ ...stateRef.current });
+          rafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+        // Normal: victory
         stateRef.current = { ...s, victory: true };
         onStateChange({ ...stateRef.current });
-        onGameEnd(true, s.kills, streakBonusRef.current);
+        onGameEnd(true, s.kills, streakBonusRef.current, s.score);
         return;
       }
+
       const sz = cfg.waveSizes[nw - 1] ?? cfg.waveSizes[cfg.waveSizes.length - 1];
-      stateRef.current = { ...s, wave: nw, zombiesRemainingInWave: sz, zombies: spawnZombies(sz, cfg) };
+      let newZombies = spawnZombies(sz, cfg);
+      let hordeActive = false;
+
+      // Horde event: at horde levels when wave 2 starts
+      const isHordeLevel = HORDE_LEVELS.includes(s.level);
+      if (nw === 2 && isHordeLevel && !hordeFiredRef.current.has(s.level)) {
+        hordeFiredRef.current.add(s.level);
+        const hordeZombies = spawnZombies(HORDE_EXTRA_COUNT, { ...cfg, sprinterChance: 0.5 });
+        newZombies = [...newZombies, ...hordeZombies];
+        hordeActive = true;
+        onHorde?.();
+      }
+
+      stateRef.current = { ...s, wave: nw, zombiesRemainingInWave: sz, zombies: newZombies, hordeActive };
       onStateChange({ ...stateRef.current });
       rafRef.current = requestAnimationFrame(tick);
       return;
@@ -229,13 +294,23 @@ export const GameEngine = React.forwardRef<
       stamina = Math.min(STAMINA_MAX, stamina + (STAMINA_REGEN * dt) / 16);
     }
 
-    // Zombie movement + player damage
+    // Zombie movement + player damage + burn
     let playerHp = s.playerHp;
     let lastDamageTime = s.lastDamageTime;
     const recentKills: RecentKill[] = s.recentKills.filter(k => ts - k.time < 1000);
 
     const newZombies: Zombie[] = s.zombies.map(z => {
       if (z.isDead) return z;
+
+      // Burn damage
+      let hp = z.hp;
+      if (z.burnUntil && ts < z.burnUntil) {
+        hp = z.hp - (BURN_DPS * dt) / 1000;
+        if (hp <= 0) {
+          return { ...z, hp: 0, isDead: true, deathTime: ts };
+        }
+      }
+
       const dx = s.player.x - z.x;
       const dy = s.player.y - z.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -243,7 +318,7 @@ export const GameEngine = React.forwardRef<
         const dmg = (cfg.zombieDamage * dt) / 1000;
         playerHp -= dmg;
         lastDamageTime = ts;
-        return z;
+        return { ...z, hp };
       }
       const nx = dx / dist;
       const ny = dy / dist;
@@ -252,6 +327,7 @@ export const GameEngine = React.forwardRef<
       const wy = Math.cos(ts * 0.0013 + z.walkPhase) * wander;
       return {
         ...z,
+        hp,
         x: z.x + (nx + wx) * z.speed * (dt / 16),
         y: z.y + (ny + wy) * z.speed * (dt / 16),
         walkPhase: z.walkPhase + 0.05,
@@ -261,7 +337,7 @@ export const GameEngine = React.forwardRef<
     if (playerHp <= 0) {
       stateRef.current = { ...s, playerHp: 0, gameOver: true };
       onStateChange({ ...stateRef.current });
-      onGameEnd(false, s.kills, 0);
+      onGameEnd(false, s.kills, 0, s.score);
       return;
     }
 
@@ -273,29 +349,39 @@ export const GameEngine = React.forwardRef<
     const updatedZombies = [...newZombies];
     const survivingBullets: Bullet[] = [];
 
-    const processKill = (zj: Zombie, j: number, bx: number, by: number) => {
+    const processKill = (zj: Zombie, j: number) => {
+      if (updatedZombies[j].isDead) return;
       kills++;
-      score += 10;
+      score += zj.isSprinter ? 15 : 10;
       recentKills.push({ id: zj.id, x: zj.x, y: zj.y, time: ts });
       updatedZombies[j] = { ...zj, hp: 0, isDead: true, deathTime: ts };
       const bonus = recordKill(ts);
       killStreakBonus += bonus;
     };
 
+    const applyBurn = (zj: Zombie, j: number) => {
+      if (updatedZombies[j].isDead) return;
+      updatedZombies[j] = {
+        ...updatedZombies[j],
+        burnUntil: ts + BURN_DURATION,
+      };
+    };
+
     for (const b of s.bullets) {
       const nx = b.x + b.vx * (dt / 16);
       const ny = b.y + b.vy * (dt / 16);
       const nd = b.distanceTraveled + Math.sqrt(b.vx * b.vx + b.vy * b.vy) * (dt / 16);
+      const expRadius = b.explosionRadius ?? DEFAULT_EXPLOSION_RADIUS;
 
-      if (nd > b.range || nx < -60 || nx > GAME_W + 60 || ny < -60 || ny > GAME_H + 60) {
+      if (nd > b.range || nx < -80 || nx > GAME_W + 80 || ny < -80 || ny > GAME_H + 80) {
         if (b.isExplosive) {
-          explosions.push({ id: idGen(), x: nx, y: ny, createdAt: ts, radius: EXPLOSION_RADIUS });
+          explosions.push({ id: idGen(), x: nx, y: ny, createdAt: ts, radius: expRadius });
           updatedZombies.forEach((z, i) => {
             if (z.isDead) return;
             const ddx = z.x - nx; const ddy = z.y - ny;
-            if (Math.sqrt(ddx * ddx + ddy * ddy) < EXPLOSION_RADIUS) {
+            if (Math.sqrt(ddx * ddx + ddy * ddy) < expRadius) {
               const nhp = z.hp - b.damage;
-              if (nhp <= 0) processKill(z, i, nx, ny);
+              if (nhp <= 0) processKill(z, i);
               else updatedZombies[i] = { ...z, hp: nhp };
             }
           });
@@ -308,30 +394,54 @@ export const GameEngine = React.forwardRef<
         const z = updatedZombies[i];
         if (z.isDead) continue;
         const ddx = z.x - nx; const ddy = z.y - ny;
-        if (Math.sqrt(ddx * ddx + ddy * ddy) < ZOMBIE_RADIUS + BULLET_RADIUS) {
+        const isFlame = WEAPONS[b.weaponId]?.isFlame;
+        const hitRadius = isFlame ? ZOMBIE_RADIUS + 8 : ZOMBIE_RADIUS + BULLET_RADIUS;
+
+        if (Math.sqrt(ddx * ddx + ddy * ddy) < hitRadius) {
           if (b.isExplosive) {
-            explosions.push({ id: idGen(), x: nx, y: ny, createdAt: ts, radius: EXPLOSION_RADIUS });
+            explosions.push({ id: idGen(), x: nx, y: ny, createdAt: ts, radius: expRadius });
             updatedZombies.forEach((zj, j) => {
               if (zj.isDead) return;
               const ex = zj.x - nx; const ey = zj.y - ny;
-              if (Math.sqrt(ex * ex + ey * ey) < EXPLOSION_RADIUS) {
+              if (Math.sqrt(ex * ex + ey * ey) < expRadius) {
                 const nhp = zj.hp - b.damage;
-                if (nhp <= 0) processKill(zj, j, nx, ny);
+                if (nhp <= 0) processKill(zj, j);
                 else updatedZombies[j] = { ...zj, hp: nhp };
               }
             });
+            hit = true; break;
           } else {
             const nhp = z.hp - b.damage;
-            if (nhp <= 0) processKill(z, i, nx, ny);
+            if (isFlame) {
+              applyBurn(z, i);
+            }
+            if (nhp <= 0) processKill(z, i);
             else updatedZombies[i] = { ...z, hp: nhp };
+            // Flame bullets pierce (don't set hit = true), others stop
+            if (!isFlame) { hit = true; break; }
           }
-          hit = true; break;
         }
       }
       if (!hit) survivingBullets.push({ ...b, x: nx, y: ny, distanceTraveled: nd });
     }
 
+    // Clean dead zombies after display time
     const finalZombies = updatedZombies.filter(z => !z.isDead || (z.deathTime && ts - z.deathTime < 700));
+
+    // Count burn-killed zombies
+    finalZombies.forEach((z, i) => {
+      if (z.isDead && z.deathTime && ts - z.deathTime < 20) {
+        const existing = recentKills.find(r => r.id === z.id);
+        if (!existing) {
+          kills++;
+          score += z.isSprinter ? 15 : 10;
+          recentKills.push({ id: z.id, x: z.x, y: z.y, time: ts });
+          const bonus = recordKill(ts);
+          killStreakBonus += bonus;
+        }
+      }
+    });
+
     const aliveZombies = finalZombies.filter(z => !z.isDead).length;
 
     // Auto-aim
@@ -354,7 +464,29 @@ export const GameEngine = React.forwardRef<
     };
     onStateChange({ ...stateRef.current });
     rafRef.current = requestAnimationFrame(tick);
-  }, [onStateChange, onGameEnd, recordKill]);
+  }, [onStateChange, onGameEnd, recordKill, onHorde]);
+
+  function buildBullets(
+    weapon: WeaponId,
+    muzzleX: number, muzzleY: number,
+    nx: number, ny: number,
+    speed: number
+  ): Bullet[] {
+    const w = WEAPONS[weapon];
+    return Array.from({ length: w.bulletsPerShot }, () => {
+      const spread = (w.spread * (Math.random() - 0.5) * Math.PI) / 180;
+      const c = Math.cos(spread); const ss = Math.sin(spread);
+      const isExplosive = weapon === "bazooka" || weapon === "grenadelauncher";
+      const bSpeed = weapon === "lasergun" ? speed * 3 : speed;
+      return {
+        id: idGen(), x: muzzleX, y: muzzleY,
+        vx: (nx * c - ny * ss) * bSpeed, vy: (nx * ss + ny * c) * bSpeed,
+        damage: w.damage, range: w.range, distanceTraveled: 0,
+        weaponId: weapon, isExplosive,
+        explosionRadius: w.explosionRadius,
+      };
+    });
+  }
 
   useImperativeHandle(ref, () => ({
     getState: () => stateRef.current!,
@@ -378,20 +510,10 @@ export const GameEngine = React.forwardRef<
       const dx = tx - s.player.x; const dy = ty - s.player.y;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
       const nx = dx / dist; const ny = dy / dist;
-      const speed = 9;
       const angle = Math.atan2(dy, dx);
       const muzzleX = s.player.x + Math.cos(angle) * 22;
       const muzzleY = s.player.y + Math.sin(angle) * 22;
-      const newBullets: Bullet[] = Array.from({ length: weapon.bulletsPerShot }, () => {
-        const spread = (weapon.spread * (Math.random() - 0.5) * Math.PI) / 180;
-        const c = Math.cos(spread); const ss = Math.sin(spread);
-        return {
-          id: idGen(), x: muzzleX, y: muzzleY,
-          vx: (nx * c - ny * ss) * speed, vy: (nx * ss + ny * c) * speed,
-          damage: weapon.damage, range: weapon.range, distanceTraveled: 0,
-          weaponId: s.currentWeapon, isExplosive: s.currentWeapon === "bazooka",
-        };
-      });
+      const newBullets = buildBullets(s.currentWeapon, muzzleX, muzzleY, nx, ny, 9);
       stateRef.current = {
         ...s, bullets: [...s.bullets, ...newBullets], ammo: s.ammo - 1,
         player: { ...s.player, angle },
@@ -412,16 +534,7 @@ export const GameEngine = React.forwardRef<
       const angle = Math.atan2(dy, dx);
       const muzzleX = s.player.x + Math.cos(angle) * 22;
       const muzzleY = s.player.y + Math.sin(angle) * 22;
-      const newBullets: Bullet[] = Array.from({ length: weapon.bulletsPerShot }, () => {
-        const spread = (weapon.spread * (Math.random() - 0.5) * Math.PI) / 180;
-        const c = Math.cos(spread); const ss = Math.sin(spread);
-        return {
-          id: idGen(), x: muzzleX, y: muzzleY,
-          vx: (nx * c - ny * ss) * 8, vy: (nx * ss + ny * c) * 8,
-          damage: weapon.damage, range: weapon.range, distanceTraveled: 0,
-          weaponId: s.currentWeapon, isExplosive: s.currentWeapon === "bazooka",
-        };
-      });
+      const newBullets = buildBullets(s.currentWeapon, muzzleX, muzzleY, nx, ny, 9);
       stateRef.current = {
         ...s, bullets: [...s.bullets, ...newBullets], ammo: s.ammo - 1,
         player: { ...s.player, angle },
@@ -467,8 +580,8 @@ export const GameEngine = React.forwardRef<
       };
       isReloadingRef.current = false;
     },
-    startGame: (level: number, weapon: WeaponId) => {
-      stateRef.current = initState(level, weapon);
+    startGame: (level: number, weapon: WeaponId, endless = false) => {
+      stateRef.current = initState(level, weapon, endless);
       pausedRef.current = false;
       lastTimeRef.current = 0;
       cancelAnimationFrame(rafRef.current);

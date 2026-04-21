@@ -36,6 +36,9 @@ export default {
     uzi: "#007AFF",
     minigun: "#FF375F",
     bazooka: "#FF6B35",
+    flamethrower: "#FF6600",
+    grenadelauncher: "#8FCA5A",
+    lasergun: "#FF00FF",
   },
 
   light: {
