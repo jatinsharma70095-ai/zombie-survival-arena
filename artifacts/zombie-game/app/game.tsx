@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, StyleSheet, Text, Pressable, Platform, Modal, Animated,
+  View, StyleSheet, Text, Pressable, Platform, Animated,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -213,8 +213,8 @@ export default function GameScreen() {
       </View>
 
       {/* Pause overlay */}
-      <Modal visible={paused} transparent animationType="fade">
-        <View style={styles.overlay}>
+      {paused && (
+        <View style={styles.overlay} pointerEvents="auto">
           <View style={styles.overlayCard}>
             <Text style={styles.overlayEmoji}>⏸</Text>
             <Text style={styles.overlayTitle}>PAUSED</Text>
@@ -229,11 +229,11 @@ export default function GameScreen() {
             </Pressable>
           </View>
         </View>
-      </Modal>
+      )}
 
       {/* Result overlay */}
-      <Modal visible={showResult} transparent animationType="fade">
-        <View style={styles.overlay}>
+      {showResult && (
+        <View style={styles.overlay} pointerEvents="auto">
           <LinearGradient
             colors={resultWon ? ["rgba(0,0,0,0.92)", "rgba(0,30,0,0.96)"] : ["rgba(0,0,0,0.92)", "rgba(40,0,0,0.96)"]}
             style={styles.overlayCard}
@@ -324,7 +324,7 @@ export default function GameScreen() {
             )}
           </LinearGradient>
         </View>
-      </Modal>
+      )}
     </View>
   );
 }
@@ -407,8 +407,10 @@ const styles = StyleSheet.create({
   joystickArea: { position: "absolute", left: 22 },
   shootArea: { position: "absolute", right: 22 },
   overlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.65)",
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.75)",
     alignItems: "center", justifyContent: "center",
+    zIndex: 9999,
   },
   overlayCard: {
     width: "82%", borderRadius: 24, padding: 32,
