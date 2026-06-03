@@ -43,10 +43,16 @@ if (Platform.OS === "web" && typeof document !== "undefined") {
     * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
   `;
   document.head.appendChild(style);
-  const isInteractive = (el: EventTarget | null) => {
-    const node = el as HTMLElement | null;
-    if (!node || !node.closest) return false;
-    return !!node.closest(
+  const isInteractive = (el: EventTarget | null): boolean => {
+    // e.target can be a text node (nodeType 3) — text nodes have no .closest().
+    // Walk up the parent chain until we reach an Element node.
+    let node = el as Node | null;
+    while (node && node.nodeType !== 1 /* Node.ELEMENT_NODE */) {
+      node = node.parentNode;
+    }
+    const elem = node as HTMLElement | null;
+    if (!elem || typeof elem.closest !== "function") return false;
+    return !!elem.closest(
       '[role="button"], [role="link"], button, a, input, textarea, select, [data-interactive="true"]'
     );
   };
@@ -141,14 +147,30 @@ export default function GameScreen() {
     setShowResult(false); setPaused(false); setStreakCount(0);
     engineRef.current?.startGame(level, playerStats.selectedWeapon, isEndless);
   };
-  const handleHome = () => router.replace("/");
-  const handleNextLevel = () => {
-    setShowResult(false); setStreakCount(0);
-    if (level >= MAX_LEVELS) {
-      // Enter endless mode
-      router.replace({ pathname: "/game", params: { level: (MAX_LEVELS + 1).toString() } });
+  const handleHome = () => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      // Use direct location change on web — guarantees navigation even if router
+      // has a stale state after the game loop has been running.
+      window.location.href = "/";
     } else {
-      router.replace({ pathname: "/game", params: { level: (level + 1).toString() } });
+      router.replace("/");
+    }
+  };
+  const handleNextLevel = () => {
+    setShowResult(false);
+    setStreakCount(0);
+    if (level >= MAX_LEVELS) {
+      // Transition into endless mode: navigate to the same screen with a new
+      // param so the component remounts cleanly.
+      router.replace({ pathname: "/game", params: { level: String(MAX_LEVELS + 1) } });
+    } else {
+      // Directly start the next level in-place (no same-route navigation quirks).
+      // We also push the new URL so the browser back-button works correctly.
+      const nextLevel = level + 1;
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.history.replaceState(null, "", `/game?level=${nextLevel}`);
+      }
+      engineRef.current?.startGame(nextLevel, playerStats.selectedWeapon, false);
     }
   };
 
