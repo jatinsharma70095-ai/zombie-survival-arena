@@ -34,37 +34,18 @@ const INITIAL_STATE: GameState = {
   hordeActive: false,
 };
 
-// Inject touch-action: none globally on web
-if (Platform.OS === "web" && typeof document !== "undefined") {
+// Inject global web styles once — CSS touch-action:none is sufficient to block
+// scroll/zoom without any JS preventDefault, which would break Pressable.onPress.
+if (Platform.OS === "web" && typeof document !== "undefined" &&
+    !document.getElementById("zg-global-style")) {
   const style = document.createElement("style");
+  style.id = "zg-global-style";
   style.textContent = `
     *, *::before, *::after { touch-action: none !important; }
     body, html { overflow: hidden !important; overscroll-behavior: none !important; }
     * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
   `;
   document.head.appendChild(style);
-  const isInteractive = (el: EventTarget | null): boolean => {
-    // e.target can be a text node (nodeType 3) — text nodes have no .closest().
-    // Walk up the parent chain until we reach an Element node.
-    let node = el as Node | null;
-    while (node && node.nodeType !== 1 /* Node.ELEMENT_NODE */) {
-      node = node.parentNode;
-    }
-    const elem = node as HTMLElement | null;
-    if (!elem || typeof elem.closest !== "function") return false;
-    return !!elem.closest(
-      '[role="button"], [role="link"], button, a, input, textarea, select, [data-interactive="true"]'
-    );
-  };
-  document.addEventListener("touchmove", (e) => {
-    if (isInteractive(e.target)) return;
-    e.preventDefault();
-  }, { passive: false });
-  document.addEventListener("touchstart", (e) => {
-    if (isInteractive(e.target)) return;
-    if ((e.target as HTMLElement)?.tagName === "INPUT") return;
-    e.preventDefault();
-  }, { passive: false });
 }
 
 export default function GameScreen() {
