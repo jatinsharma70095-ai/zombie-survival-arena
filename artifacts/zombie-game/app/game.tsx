@@ -34,20 +34,6 @@ const INITIAL_STATE: GameState = {
   hordeActive: false,
 };
 
-// Inject global web styles once — CSS touch-action:none is sufficient to block
-// scroll/zoom without any JS preventDefault, which would break Pressable.onPress.
-if (Platform.OS === "web" && typeof document !== "undefined" &&
-    !document.getElementById("zg-global-style")) {
-  const style = document.createElement("style");
-  style.id = "zg-global-style";
-  style.textContent = `
-    *, *::before, *::after { touch-action: none !important; }
-    body, html { overflow: hidden !important; overscroll-behavior: none !important; }
-    * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
-  `;
-  document.head.appendChild(style);
-}
-
 export default function GameScreen() {
   const params = useLocalSearchParams<{ level?: string }>();
   const levelParam = parseInt(params.level ?? "1", 10);
@@ -69,6 +55,23 @@ export default function GameScreen() {
 
   const topPad = Platform.OS === "web" ? 44 : insets.top;
   const botPad = Platform.OS === "web" ? 24 : insets.bottom;
+
+  // Inject touch-action:none ONLY while the game screen is mounted.
+  // Cleanup removes it so Arsenal/Shop ScrollViews work after navigating back.
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    const prev = document.getElementById("zg-global-style");
+    if (prev) prev.remove();
+    const style = document.createElement("style");
+    style.id = "zg-global-style";
+    style.textContent = `
+      *, *::before, *::after { touch-action: none !important; }
+      body, html { overflow: hidden !important; overscroll-behavior: none !important; }
+      * { -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+    `;
+    document.head.appendChild(style);
+    return () => { document.getElementById("zg-global-style")?.remove(); };
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(
