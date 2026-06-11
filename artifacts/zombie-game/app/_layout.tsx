@@ -7,6 +7,7 @@ import {
 } from "@expo-google-fonts/inter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
+import Head from "expo-router/head";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -50,6 +51,15 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+      <Head>
+        <meta charSet="utf-8" />
+        <script
+          async
+          // @ts-ignore — crossOrigin not typed on script
+          crossOrigin="anonymous"
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3938195193121476"
+        />
+      </Head>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <GameProvider>
