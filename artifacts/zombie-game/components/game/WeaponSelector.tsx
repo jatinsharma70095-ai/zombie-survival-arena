@@ -1,5 +1,5 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import Colors from "@/constants/colors";
 import { WeaponId, WEAPONS } from "@/context/GameContext";
 
@@ -20,8 +20,8 @@ const WEAPON_ORDER: WeaponId[] = [
   "bazooka", "flamethrower", "grenadelauncher", "lasergun",
 ];
 
-// How many weapon slots to show at once
-const PAGE_SIZE = 5;
+const TOTAL = WEAPON_ORDER.length; // 9
+const PAGE = 5;                    // visible at once
 
 interface Props {
   unlockedWeapons: WeaponId[];
@@ -30,97 +30,98 @@ interface Props {
 }
 
 export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Props) {
-  // Start the window so the selected weapon is visible
-  const selectedIdx = WEAPON_ORDER.indexOf(selectedWeapon);
-  const [windowStart, setWindowStart] = useState(() =>
-    Math.min(Math.max(0, selectedIdx - Math.floor(PAGE_SIZE / 2)), WEAPON_ORDER.length - PAGE_SIZE)
-  );
+  const [start, setStart] = useState(0);
 
-  const canLeft = windowStart > 0;
-  const canRight = windowStart + PAGE_SIZE < WEAPON_ORDER.length;
-  const visible = WEAPON_ORDER.slice(windowStart, windowStart + PAGE_SIZE);
+  // Track previous selectedWeapon so we only auto-scroll when the game engine
+  // changes the selection (e.g. auto-equip on unlock), NOT on every render.
+  const prevWeapon = useRef(selectedWeapon);
+  useEffect(() => {
+    if (prevWeapon.current === selectedWeapon) return;
+    prevWeapon.current = selectedWeapon;
+    const idx = WEAPON_ORDER.indexOf(selectedWeapon);
+    if (idx < 0) return;
+    setStart(prev => {
+      if (idx < prev) return idx;
+      if (idx >= prev + PAGE) return idx - PAGE + 1;
+      return prev;
+    });
+  }, [selectedWeapon]);
 
-  const goLeft = useCallback(() => {
-    setWindowStart(prev => Math.max(0, prev - 1));
-  }, []);
+  const canLeft  = start > 0;
+  const canRight = start + PAGE < TOTAL;
+  const visible  = WEAPON_ORDER.slice(start, start + PAGE);
 
-  const goRight = useCallback(() => {
-    setWindowStart(prev => Math.min(WEAPON_ORDER.length - PAGE_SIZE, prev + 1));
-  }, []);
-
-  // Scroll window to keep selected weapon visible when it changes externally
-  const selIdx = WEAPON_ORDER.indexOf(selectedWeapon);
-  if (selIdx < windowStart) setWindowStart(selIdx);
-  else if (selIdx >= windowStart + PAGE_SIZE) setWindowStart(selIdx - PAGE_SIZE + 1);
+  const goLeft  = useCallback(() => setStart(p => Math.max(0, p - 1)), []);
+  const goRight = useCallback(() => setStart(p => Math.min(TOTAL - PAGE, p + 1)), []);
 
   return (
     <View style={styles.container}>
-      {/* Left arrow */}
+      {/* ← arrow */}
       <Pressable
-        style={[styles.arrow, !canLeft && styles.arrowDisabled]}
+        style={[styles.arrow, !canLeft && styles.arrowDim]}
         onPress={goLeft}
         disabled={!canLeft}
-        hitSlop={12}
+        hitSlop={16}
       >
-        <Text style={[styles.arrowText, !canLeft && styles.arrowTextDisabled]}>‹</Text>
+        <Text style={styles.arrowTxt}>{"<"}</Text>
       </Pressable>
 
       {/* Weapon slots */}
-      <View style={styles.slotsRow}>
+      <View style={styles.row}>
         {visible.map((wid) => {
-          const w = WEAPONS[wid];
+          const w       = WEAPONS[wid];
           const unlocked = unlockedWeapons.includes(wid);
           const selected = selectedWeapon === wid;
-          const color = (Colors.weapons as Record<string, string>)[wid] ?? "#FFD60A";
+          const color    = (Colors.weapons as Record<string, string>)[wid] ?? "#FFD60A";
           return (
             <Pressable
               key={wid}
               style={[
-                styles.weaponBtn,
+                styles.slot,
                 selected && { borderColor: color, backgroundColor: `${color}22` },
-                !unlocked && styles.locked,
+                !unlocked && styles.slotLocked,
               ]}
               onPress={() => unlocked && onSelect(wid)}
               disabled={!unlocked}
             >
-              <Text style={[styles.weaponEmoji, { opacity: !unlocked ? 0.4 : 1 }]}>
+              <Text style={[styles.emoji, !unlocked && { opacity: 0.35 }]}>
                 {WEAPON_EMOJI[wid]}
               </Text>
               <Text
                 style={[
-                  styles.weaponLabel,
+                  styles.label,
                   { color: !unlocked ? Colors.textMuted : selected ? color : Colors.textSecondary },
                 ]}
                 numberOfLines={1}
               >
                 {w.name}
               </Text>
-              {selected && <View style={[styles.selectedDot, { backgroundColor: color }]} />}
-              {!unlocked && <Text style={styles.lockIcon}>🔒</Text>}
+              {selected && <View style={[styles.dot, { backgroundColor: color }]} />}
+              {!unlocked && <Text style={styles.lock}>🔒</Text>}
             </Pressable>
           );
         })}
       </View>
 
-      {/* Right arrow */}
+      {/* → arrow */}
       <Pressable
-        style={[styles.arrow, !canRight && styles.arrowDisabled]}
+        style={[styles.arrow, !canRight && styles.arrowDim]}
         onPress={goRight}
         disabled={!canRight}
-        hitSlop={12}
+        hitSlop={16}
       >
-        <Text style={[styles.arrowText, !canRight && styles.arrowTextDisabled]}>›</Text>
+        <Text style={styles.arrowTxt}>{">"}</Text>
       </Pressable>
 
-      {/* Dot indicator — shows position in the full list */}
-      <View style={styles.dotsRow}>
+      {/* Position dots */}
+      <View style={styles.dots}>
         {WEAPON_ORDER.map((wid, i) => (
           <View
             key={wid}
             style={[
-              styles.dot,
-              i >= windowStart && i < windowStart + PAGE_SIZE && styles.dotVisible,
-              selectedWeapon === wid && styles.dotSelected,
+              styles.pip,
+              i >= start && i < start + PAGE && styles.pipActive,
+              selectedWeapon === wid && styles.pipSelected,
             ]}
           />
         ))}
@@ -132,59 +133,54 @@ export function WeaponSelector({ unlockedWeapons, selectedWeapon, onSelect }: Pr
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    bottom: 152,
+    bottom: 148,
     left: 0,
     right: 0,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 6,
-    gap: 4,
+    paddingHorizontal: 4,
+    gap: 3,
   },
   arrow: {
-    width: 28,
-    height: 60,
+    width: 34,
+    height: 64,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(255,255,255,0.12)",
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.25)",
   },
-  arrowDisabled: {
-    opacity: 0.2,
-  },
-  arrowText: {
+  arrowDim: { opacity: 0.18 },
+  arrowTxt: {
     color: "#FFFFFF",
-    fontSize: 26,
-    lineHeight: 30,
+    fontSize: 22,
     fontFamily: "Inter_700Bold",
+    lineHeight: 26,
   },
-  arrowTextDisabled: {
-    color: "rgba(255,255,255,0.4)",
-  },
-  slotsRow: {
+  row: {
     flex: 1,
     flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
+    gap: 5,
     alignItems: "center",
+    justifyContent: "center",
   },
-  weaponBtn: {
+  slot: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    maxWidth: 62,
-    height: 60,
+    maxWidth: 64,
+    height: 64,
     borderRadius: 12,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.6)",
     borderWidth: 1.5,
     borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 2,
     position: "relative",
   },
-  locked: { opacity: 0.35 },
-  weaponEmoji: { fontSize: 22, lineHeight: 26 },
-  weaponLabel: {
+  slotLocked: { opacity: 0.38 },
+  emoji: { fontSize: 22, lineHeight: 26 },
+  label: {
     fontSize: 7,
     fontFamily: "Inter_600SemiBold",
     letterSpacing: 0.3,
@@ -192,37 +188,29 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 2,
   },
-  selectedDot: {
+  dot: {
     position: "absolute",
     bottom: 4,
     width: 5,
     height: 5,
     borderRadius: 2.5,
   },
-  lockIcon: { position: "absolute", top: 2, right: 2, fontSize: 9 },
-  dotsRow: {
+  lock: { position: "absolute", top: 2, right: 2, fontSize: 9 },
+  dots: {
     position: "absolute",
-    bottom: -10,
+    bottom: -12,
     left: 0,
     right: 0,
     flexDirection: "row",
     justifyContent: "center",
-    gap: 4,
+    gap: 5,
   },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "rgba(255,255,255,0.12)",
+  pip: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
-  dotVisible: {
-    backgroundColor: "rgba(255,255,255,0.3)",
-  },
-  dotSelected: {
-    backgroundColor: "#FFD60A",
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginTop: -1,
-  },
+  pipActive:   { backgroundColor: "rgba(255,255,255,0.35)" },
+  pipSelected: { backgroundColor: "#FFD60A", width: 7, height: 7, borderRadius: 3.5, marginTop: -1 },
 });
